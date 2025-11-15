@@ -1,15 +1,12 @@
-/**
- * API: /api/transactions/new - 入出庫登録
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/auth';
 import { addTransaction, addItem, getItemByCode } from '@/lib/sheets';
 import { Transaction } from '@/types';
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth();
+    const session = await getServerSession(authOptions);
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

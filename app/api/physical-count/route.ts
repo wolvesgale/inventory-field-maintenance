@@ -3,13 +3,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/auth';
 import { getTransactions, getItems, addPhysicalCount, addDiffLog } from '@/lib/sheets';
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth();
-    if (!session || (session.user.role !== 'manager' && session.user.role !== 'admin')) {
+    const session = await getServerSession(authOptions);
+    if (!session || ((session.user as any)?.role !== 'manager' && (session.user as any)?.role !== 'admin')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
