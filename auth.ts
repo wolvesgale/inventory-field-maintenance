@@ -9,22 +9,22 @@ export const authOptions: NextAuthOptions = {
     CredentialsProvider({
       name: "Inventory Login",
       credentials: {
-        loginId: { label: "ログインID", type: "text" },
+        login_id: { label: "ログインID", type: "text" },
         password: { label: "パスワード", type: "password" },
       },
       async authorize(credentials) {
         console.log('[DEBUG] authorize called with:', {
-          loginId: credentials?.loginId,
+          login_id: credentials?.login_id,
           password: credentials?.password ? '***' : 'undefined',
         });
 
-        if (!credentials?.loginId || !credentials?.password) {
+        if (!credentials?.login_id || !credentials?.password) {
           console.log('[DEBUG] Missing credentials');
           return null;
         }
 
         try {
-          const user = await getUserByLoginId(credentials.loginId);
+          const user = await getUserByLoginId(credentials.login_id);
           console.log('[DEBUG] getUserByLoginId result:', user ? { ...user, password_hash: '***' } : null);
 
           if (!user) {
