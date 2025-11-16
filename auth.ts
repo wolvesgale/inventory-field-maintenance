@@ -9,22 +9,24 @@ export const authOptions: NextAuthOptions = {
     CredentialsProvider({
       name: "Inventory Login",
       credentials: {
-        login_id: { label: "ログインID", type: "text" },
+        loginId: { label: "ログインID", type: "text" },
         password: { label: "パスワード", type: "password" },
       },
       async authorize(credentials) {
         console.log('[DEBUG] authorize called with:', {
-          login_id: credentials?.login_id,
-          password: credentials?.password ? '***' : 'undefined',
+          loginId: credentials?.loginId,
+          passwordProvided: credentials?.password ? 'yes' : 'no',
         });
 
-        if (!credentials?.login_id || !credentials?.password) {
+        if (!credentials?.loginId || !credentials?.password) {
           console.log('[DEBUG] Missing credentials');
           return null;
         }
 
+        const trimmedLoginId = credentials.loginId.trim();
+
         try {
-          const user = await getUserByLoginId(credentials.login_id);
+          const user = await getUserByLoginId(trimmedLoginId);
           console.log('[DEBUG] getUserByLoginId result:', user ? { ...user, password_hash: '***' } : null);
 
           if (!user) {
@@ -37,11 +39,14 @@ export const authOptions: NextAuthOptions = {
             return null;
           }
 
-          const ok = await bcrypt.compare(
-            credentials.password,
-            user.password_hash
-          );
+          const ok = await bcrypt.compare(credentials.password, user.password_hash);
           console.log('[DEBUG] bcrypt.compare result:', ok);
+
+          console.log('[DEBUG] authorize summary:', {
+            loginId: trimmedLoginId,
+            userFound: !!user,
+            passwordMatched: ok,
+          });
           
           if (!ok) {
             console.log('[DEBUG] Password does not match');
