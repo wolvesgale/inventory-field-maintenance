@@ -12,17 +12,17 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { type, timestamp, itemCode, itemName, quantity, reason, isNewItem } = body;
+    const { type, date, item_code, item_name, qty, reason, is_new_item } = body;
 
     // バリデーション
-    if (!type || !timestamp || !itemCode || !quantity) {
+    if (!type || !date || !item_code || (qty === undefined || qty === null)) {
       return NextResponse.json(
         { success: false, error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    const parsedQty = parseInt(String(quantity), 10);
+    const parsedQty = parseInt(String(qty), 10);
     if (isNaN(parsedQty) || parsedQty <= 0) {
       return NextResponse.json(
         { success: false, error: 'Invalid quantity' },
@@ -31,40 +31,38 @@ export async function POST(request: NextRequest) {
     }
 
     // 新規品目の場合、Items に追加
-    if (isNewItem) {
-      if (!itemName) {
+    if (is_new_item) {
+      if (!item_name) {
         return NextResponse.json(
           { success: false, error: 'Item name is required for new items' },
           { status: 400 }
         );
       }
 
-      const existingItem = await getItemByCode(itemCode);
+      const existingItem = await getItemByCode(item_code);
       if (!existingItem) {
         await addItem({
-          code: itemCode,
-          name: itemName,
+          item_code: item_code,
+          item_name: item_name,
           category: '',
           unit: '個',
-          standardQuantity: 0,
-          minQuantity: 0,
-          location: '',
+          created_at: new Date().toISOString(),
+          new_flag: true,
         });
       }
     }
 
     // 入出庫取引を追加
     const transaction: Omit<Transaction, 'id'> = {
-      itemId: '', // 別途設定が必要
-      itemCode,
-      itemName: itemName || '',
-      type: type as 'add' | 'remove' | 'adjustment',
-      quantity: parsedQty,
+      item_code: item_code,
+      item_name: item_name || '',
+      type: type as 'IN' | 'OUT',
+      qty: parsedQty,
       reason: reason || '',
-      workerId: (session.user as any).id,
-      workerName: (session.user as any).name,
+      user_id: (session.user as any).id,
+      user_name: (session.user as any).name,
       area: (session.user as any).area || '',
-      timestamp,
+      date,
       status: 'pending',
     };
 

@@ -68,24 +68,23 @@ export interface Item {
 // 入出庫取引関連型
 // ============================================================
 
-export type TransactionType = 'add' | 'remove' | 'adjustment';
+export type TransactionType = 'IN' | 'OUT';
 export type TransactionStatus = 'draft' | 'pending' | 'approved' | 'locked';
 
 export interface Transaction {
   id?: string;
-  itemId: string;
-  itemCode: string;
-  itemName: string;
+  item_code: string;
+  item_name: string;
   type: TransactionType;
-  quantity: number;
-  reason: string;
-  workerId: string;
-  workerName: string;
+  qty: number;
+  reason?: string;
+  user_id: string;
+  user_name: string;
   area: string;
-  timestamp: string;
+  date: string;
   status: TransactionStatus;
-  approvedBy?: string;
-  approvalTime?: string;
+  approved_by?: string;
+  approved_at?: string;
 }
 
 // ============================================================
@@ -109,27 +108,27 @@ export interface StockLedgerEntry {
 
 export interface PhysicalCount {
   id?: string;
-  countDate: string;
-  itemId: string;
-  itemCode: string;
-  itemName: string;
-  countedQuantity: number;
-  systemQuantity: number;
+  date: string;
+  item_code: string;
+  item_name: string;
+  expected_qty: number;
+  actual_qty: number;
   difference: number;
-  workerId: string;
-  workerName: string;
-  area: string;
+  user_id: string;
+  user_name: string;
+  location: string;
   status: 'draft' | 'confirmed';
 }
 
 export interface DiffLog {
   id?: string;
-  physicalCountId: string;
-  itemId: string;
-  itemCode: string;
-  itemName: string;
-  difference: number;
-  reportedDate: string;
+  physical_count_id: string;
+  item_code: string;
+  item_name: string;
+  expected_qty: number;
+  actual_qty: number;
+  diff: number;
+  reason?: string;
   status: 'pending' | 'approved' | 'locked';
 }
 
@@ -164,10 +163,10 @@ export interface StockViewItem extends StockLedgerEntry {
   is_new: boolean;
 }
 
-export interface TransactionView extends Transaction {
+export type TransactionView = Omit<Transaction, 'user_name' | 'item_name'> & {
   user_name?: string;
   item_name?: string;
-}
+};
 
 export interface ApprovalItem extends TransactionView {
   can_approve: boolean;

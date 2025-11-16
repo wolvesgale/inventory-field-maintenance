@@ -38,42 +38,42 @@ export async function POST(request: NextRequest) {
 
     // 対象月のデータを抽出
     const monthTransactions = transactions.filter(tx => 
-      tx.timestamp.startsWith(month) && (tx.status === 'approved' || tx.status === 'locked')
+      tx.date.startsWith(month) && (tx.status === 'approved' || tx.status === 'locked')
     );
 
     // 品目ごとに集計
     const reportMap = new Map<string, MonthlyReportItem>();
 
     monthTransactions.forEach(tx => {
-      const key = tx.itemCode;
+      const key = tx.item_code;
       if (!reportMap.has(key)) {
-        const item = items.find(i => i.code === tx.itemCode);
+        const item = items.find(i => i.item_code === tx.item_code);
         reportMap.set(key, {
-          item_code: tx.itemCode,
-          item_name: item?.name || '不明',
+          item_code: tx.item_code,
+          item_name: item?.item_name || '不明',
           expected_qty: 0,
           actual_qty: 0,
           diff: 0,
           has_diff: false,
-          is_new_item: false,
+          is_new_item: !!item?.new_flag,
         });
       }
 
       const report = reportMap.get(key)!;
-      if (tx.type === 'add') {
-        report.expected_qty += tx.quantity;
-      } else if (tx.type === 'remove') {
-        report.expected_qty -= tx.quantity;
+      if (tx.type === 'IN') {
+        report.expected_qty += tx.qty;
+      } else if (tx.type === 'OUT') {
+        report.expected_qty -= tx.qty;
       }
     });
 
     // DiffLog から差異情報を関連付け
     diffs.forEach(diff => {
-      const report = reportMap.get(diff.itemCode);
+      const report = reportMap.get(diff.item_code);
       if (report) {
-        report.actual_qty = diff.difference;
-        report.diff = diff.difference;
-        report.has_diff = diff.difference !== 0;
+        report.actual_qty = diff.diff;
+        report.diff = diff.diff;
+        report.has_diff = diff.diff !== 0;
       }
     });
 
@@ -89,12 +89,11 @@ export async function POST(request: NextRequest) {
       // SupplierReports に記録
       for (const report of reportList) {
         await addSupplierReport({
-          reportDate: month,
-          itemId: report.item_code,
-          itemCode: report.item_code,
-          itemName: report.item_name,
-          discrepancy: report.diff,
-          reason: 'Monthly inventory check',
+          month,
+          item_code: report.item_code,
+          item_name: report.item_name,
+          qty: report.diff,
+          is_new_item: report.is_new_item,
         });
       }
     }

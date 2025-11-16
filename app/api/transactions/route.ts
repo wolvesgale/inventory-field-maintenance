@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     // worker は自分の取引のみ、manager/admin は全取引
     let filteredTransactions = transactions;
     if (userRole === 'worker') {
-      filteredTransactions = transactions.filter(tx => tx.workerId === (session.user as any).id);
+      filteredTransactions = transactions.filter(tx => tx.user_id === (session.user as any).id);
     }
 
     // ユーザー情報を関連付け

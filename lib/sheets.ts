@@ -49,21 +49,27 @@ export type PhysicalCount = {
   user_name: string;
   location: string;
   status: "draft" | "confirmed";
-  workerId: string;
-  workerName: string;
-  area: string;
-  status: "draft" | "confirmed";
 };
 
 export type DiffLog = {
   id: string;
-  physicalCountId: string;
-  itemId: string;
-  itemCode: string;
-  itemName: string;
-  difference: number;
-  reportedDate: string;
+  physical_count_id: string;
+  item_code: string;
+  item_name: string;
+  expected_qty: number;
+  actual_qty: number;
+  diff: number;
+  reason?: string;
   status: "pending" | "approved" | "locked";
+};
+
+export type SupplierReport = {
+  id: string;
+  month: string;
+  item_code: string;
+  item_name: string;
+  qty: number;
+  is_new_item: boolean;
 };
 
 function getSheetsClient() {
@@ -92,12 +98,8 @@ function getSheetsClient() {
   return { sheets, spreadsheetId };
 }
 
-/**
- * login_id から 1件だけユーザーを取得
- */
-export async function getUserByLoginId(loginId: string): Promise<AppUser | null> {
+export async function getUserByLoginId(login_id: string): Promise<AppUser | null> {
   const { sheets, spreadsheetId } = getSheetsClient();
-
   const range = "Users!A1:G1000";
 
   const res = await sheets.spreadsheets.values.get({
@@ -146,8 +148,8 @@ export async function getUserByLoginId(loginId: string): Promise<AppUser | null>
     throw new Error("Users シートのヘッダが想定と異なります");
   }
 
-  const row = dataRows.find((r) => r[idxLoginId] === loginId);
-  console.log('[DEBUG sheets] Looking for loginId:', loginId);
+  const row = dataRows.find((r) => r[idxLoginId] === login_id);
+  console.log('[DEBUG sheets] Looking for login_id:', login_id);
   console.log('[DEBUG sheets] Found row:', row ? { ...row } : null);
 
   if (!row) {
@@ -170,15 +172,15 @@ export async function getUserByLoginId(loginId: string): Promise<AppUser | null>
 
   const user: AppUser = {
     id: String(row[idxId]),
-    loginId: String(row[idxLoginId]),
-    passwordHash: String(row[idxPassword] ?? ""),
+    login_id: String(row[idxLoginId]),
+    password_hash: String(row[idxPassword] ?? ""),
     role: String(row[idxRole] ?? "worker"),
     name: String(row[idxName] ?? ""),
     area: idxArea >= 0 ? String(row[idxArea] ?? "") : undefined,
     active: isActive,
   };
 
-  console.log('[DEBUG sheets] Returning user:', { ...user, passwordHash: '***' });
+  console.log('[DEBUG sheets] Returning user:', { ...user, password_hash: '***' });
   return user;
 }
 
@@ -202,13 +204,12 @@ export async function getItems(): Promise<InventoryItem[]> {
 
   const items = rows.slice(1).map((row) => ({
     id: String(row[colIndex("id")] || ""),
-    code: String(row[colIndex("code")] || ""),
-    name: String(row[colIndex("name")] || ""),
+    item_code: String(row[colIndex("item_code")] || ""),
+    item_name: String(row[colIndex("item_name")] || ""),
     category: String(row[colIndex("category")] || ""),
     unit: String(row[colIndex("unit")] || ""),
-    standardQuantity: Number(row[colIndex("standard_quantity")] || 0),
-    minQuantity: Number(row[colIndex("min_quantity")] || 0),
-    location: String(row[colIndex("location")] || ""),
+    created_at: row[colIndex("created_at")] ? String(row[colIndex("created_at")]) : undefined,
+    new_flag: String(row[colIndex("new_flag")] || "").toLowerCase() === "true",
   }));
 
   return items;
@@ -234,19 +235,18 @@ export async function getTransactions(): Promise<Transaction[]> {
 
   const transactions = rows.slice(1).map((row) => ({
     id: String(row[colIndex("id")] || ""),
-    itemId: String(row[colIndex("item_id")] || ""),
-    itemCode: String(row[colIndex("item_code")] || ""),
-    itemName: String(row[colIndex("item_name")] || ""),
-    type: (row[colIndex("type")] as "add" | "remove" | "adjustment") || "add",
-    quantity: Number(row[colIndex("quantity")] || 0),
-    reason: String(row[colIndex("reason")] || ""),
-    workerId: String(row[colIndex("worker_id")] || ""),
-    workerName: String(row[colIndex("worker_name")] || ""),
+    item_code: String(row[colIndex("item_code")] || ""),
+    item_name: String(row[colIndex("item_name")] || ""),
+    type: (row[colIndex("type")] as "IN" | "OUT") || "IN",
+    qty: Number(row[colIndex("qty")] || 0),
+    reason: row[colIndex("reason")] ? String(row[colIndex("reason")]) : undefined,
+    user_id: String(row[colIndex("user_id")] || ""),
+    user_name: String(row[colIndex("user_name")] || ""),
     area: String(row[colIndex("area")] || ""),
-    timestamp: String(row[colIndex("timestamp")] || ""),
+    date: String(row[colIndex("date")] || ""),
     status: (row[colIndex("status")] as "draft" | "pending" | "approved" | "locked") || "draft",
-    approvedBy: row[colIndex("approved_by")] ? String(row[colIndex("approved_by")]) : undefined,
-    approvalTime: row[colIndex("approval_time")] ? String(row[colIndex("approval_time")]) : undefined,
+    approved_by: row[colIndex("approved_by")] ? String(row[colIndex("approved_by")]) : undefined,
+    approved_at: row[colIndex("approved_at")] ? String(row[colIndex("approved_at")]) : undefined,
   }));
 
   return transactions;
@@ -262,19 +262,18 @@ export async function addTransaction(transaction: Omit<Transaction, 'id'>): Prom
   const id = `TRX_${Date.now()}`;
   const values = [[
     id,
-    transaction.itemId,
-    transaction.itemCode,
-    transaction.itemName,
+    transaction.item_code,
+    transaction.item_name,
     transaction.type,
-    transaction.quantity,
-    transaction.reason,
-    transaction.workerId,
-    transaction.workerName,
+    transaction.qty,
+    transaction.reason || "",
+    transaction.user_id,
+    transaction.user_name,
     transaction.area,
-    transaction.timestamp,
+    transaction.date,
     transaction.status,
-    transaction.approvedBy || "",
-    transaction.approvalTime || "",
+    transaction.approved_by || "",
+    transaction.approved_at || "",
   ]];
 
   await sheets.spreadsheets.values.append({
@@ -307,16 +306,15 @@ export async function getPhysicalCounts(): Promise<PhysicalCount[]> {
 
   const counts = rows.slice(1).map((row) => ({
     id: String(row[colIndex("id")] || ""),
-    countDate: String(row[colIndex("count_date")] || ""),
-    itemId: String(row[colIndex("item_id")] || ""),
-    itemCode: String(row[colIndex("item_code")] || ""),
-    itemName: String(row[colIndex("item_name")] || ""),
-    countedQuantity: Number(row[colIndex("counted_quantity")] || 0),
-    systemQuantity: Number(row[colIndex("system_quantity")] || 0),
+    date: String(row[colIndex("date")] || ""),
+    item_code: String(row[colIndex("item_code")] || ""),
+    item_name: String(row[colIndex("item_name")] || ""),
+    expected_qty: Number(row[colIndex("expected_qty")] || 0),
+    actual_qty: Number(row[colIndex("actual_qty")] || 0),
     difference: Number(row[colIndex("difference")] || 0),
-    workerId: String(row[colIndex("worker_id")] || ""),
-    workerName: String(row[colIndex("worker_name")] || ""),
-    area: String(row[colIndex("area")] || ""),
+    user_id: String(row[colIndex("user_id")] || ""),
+    user_name: String(row[colIndex("user_name")] || ""),
+    location: String(row[colIndex("location")] || ""),
     status: (row[colIndex("status")] as "draft" | "confirmed") || "draft",
   }));
 
@@ -333,16 +331,15 @@ export async function addPhysicalCount(count: Omit<PhysicalCount, 'id'>): Promis
   const id = `PC_${Date.now()}`;
   const values = [[
     id,
-    count.countDate,
-    count.itemId,
-    count.itemCode,
-    count.itemName,
-    count.countedQuantity,
-    count.systemQuantity,
+    count.date,
+    count.item_code,
+    count.item_name,
+    count.expected_qty,
+    count.actual_qty,
     count.difference,
-    count.workerId,
-    count.workerName,
-    count.area,
+    count.user_id,
+    count.user_name,
+    count.location,
     count.status,
   ]];
 
@@ -366,12 +363,13 @@ export async function addDiffLog(log: Omit<DiffLog, 'id'>): Promise<string> {
   const id = `DIFF_${Date.now()}`;
   const values = [[
     id,
-    log.physicalCountId,
-    log.itemId,
-    log.itemCode,
-    log.itemName,
-    log.difference,
-    log.reportedDate,
+    log.physical_count_id,
+    log.item_code,
+    log.item_name,
+    log.expected_qty,
+    log.actual_qty,
+    log.diff,
+    log.reason || "",
     log.status,
   ]];
 
@@ -391,8 +389,8 @@ export async function addDiffLog(log: Omit<DiffLog, 'id'>): Promise<string> {
 export async function updateTransactionStatus(
   id: string,
   status: "draft" | "pending" | "approved" | "locked",
-  approvedBy?: string,
-  approvalTime?: string
+  approved_by?: string,
+  approved_at?: string
 ): Promise<void> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "Transactions!A1:N1000";
@@ -412,10 +410,10 @@ export async function updateTransactionStatus(
 
   const statusIdx = colIndex("status");
   const approvedByIdx = colIndex("approved_by");
-  const approvalTimeIdx = colIndex("approval_time");
+  const approvedAtIdx = colIndex("approved_at");
 
-  const updateRange = `Transactions!L${rowIndex + 1}:N${rowIndex + 1}`;
-  const values = [[status, approvedBy || "", approvalTime || ""]];
+  const updateRange = `Transactions!${String.fromCharCode(65 + statusIdx)}${rowIndex + 1}:${String.fromCharCode(65 + approvedAtIdx)}${rowIndex + 1}`;
+  const values = [[status, approved_by || "", approved_at || ""]];
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
@@ -430,10 +428,9 @@ export async function updateTransactionStatus(
  */
 export async function getStockAggregate(): Promise<
   Array<{
-    itemId: string;
-    itemCode: string;
-    itemName: string;
-    totalQuantity: number;
+    item_code: string;
+    item_name: string;
+    total_qty: number;
     area: string;
   }>
 > {
@@ -443,30 +440,28 @@ export async function getStockAggregate(): Promise<
   const aggregate: Record<
     string,
     {
-      itemId: string;
-      itemCode: string;
-      itemName: string;
-      totalQuantity: number;
+      item_code: string;
+      item_name: string;
+      total_qty: number;
       area: string;
     }
   > = {};
 
   approved.forEach((t) => {
-    const key = `${t.itemId}_${t.area}`;
+    const key = `${t.item_code}_${t.area}`;
     if (!aggregate[key]) {
       aggregate[key] = {
-        itemId: t.itemId,
-        itemCode: t.itemCode,
-        itemName: t.itemName,
-        totalQuantity: 0,
+        item_code: t.item_code,
+        item_name: t.item_name,
+        total_qty: 0,
         area: t.area,
       };
     }
 
-    if (t.type === "add") {
-      aggregate[key].totalQuantity += t.quantity;
+    if (t.type === "IN") {
+      aggregate[key].total_qty += t.qty;
     } else {
-      aggregate[key].totalQuantity -= t.quantity;
+      aggregate[key].total_qty -= t.qty;
     }
   });
 
@@ -491,17 +486,17 @@ export async function searchItems(query: string): Promise<InventoryItem[]> {
   const q = query.toLowerCase();
   return items.filter(
     (item) =>
-      item.code.toLowerCase().includes(q) ||
-      item.name.toLowerCase().includes(q)
+      item.item_code.toLowerCase().includes(q) ||
+      item.item_name.toLowerCase().includes(q)
   );
 }
 
 /**
  * コードから1件の商品を取得
  */
-export async function getItemByCode(code: string): Promise<InventoryItem | null> {
+export async function getItemByCode(item_code: string): Promise<InventoryItem | null> {
   const items = await getItems();
-  return items.find((item) => item.code === code) || null;
+  return items.find((item) => item.item_code === item_code) || null;
 }
 
 /**
@@ -514,13 +509,12 @@ export async function addItem(item: Omit<InventoryItem, 'id'>): Promise<string> 
   const id = `ITEM_${Date.now()}`;
   const values = [[
     id,
-    item.code,
-    item.name,
+    item.item_code,
+    item.item_name,
     item.category,
     item.unit,
-    item.standardQuantity,
-    item.minQuantity,
-    item.location,
+    item.created_at || "",
+    item.new_flag ? "true" : "false",
   ]];
 
   await sheets.spreadsheets.values.append({
@@ -561,8 +555,8 @@ export async function getUsers(): Promise<AppUser[]> {
 
       return {
         id: String(row[colIndex("id")] || ""),
-        loginId: String(row[colIndex("login_id")] || ""),
-        passwordHash: String(row[colIndex("password_hash")] || ""),
+        login_id: String(row[colIndex("login_id")] || ""),
+        password_hash: String(row[colIndex("password_hash")] || ""),
         role: String(row[colIndex("role")] || "worker"),
         name: String(row[colIndex("name")] || ""),
         area: row[colIndex("area")] ? String(row[colIndex("area")]) : undefined,
@@ -579,7 +573,7 @@ export async function getUsers(): Promise<AppUser[]> {
  */
 export async function getDiffLogs(): Promise<DiffLog[]> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const range = "DiffLog!A1:H1000";
+  const range = "DiffLog!A1:I1000";
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -594,12 +588,13 @@ export async function getDiffLogs(): Promise<DiffLog[]> {
 
   const logs = rows.slice(1).map((row) => ({
     id: String(row[colIndex("id")] || ""),
-    physicalCountId: String(row[colIndex("physical_count_id")] || ""),
-    itemId: String(row[colIndex("item_id")] || ""),
-    itemCode: String(row[colIndex("item_code")] || ""),
-    itemName: String(row[colIndex("item_name")] || ""),
-    difference: Number(row[colIndex("difference")] || 0),
-    reportedDate: String(row[colIndex("reported_date")] || ""),
+    physical_count_id: String(row[colIndex("physical_count_id")] || ""),
+    item_code: String(row[colIndex("item_code")] || ""),
+    item_name: String(row[colIndex("item_name")] || ""),
+    expected_qty: Number(row[colIndex("expected_qty")] || 0),
+    actual_qty: Number(row[colIndex("actual_qty")] || 0),
+    diff: Number(row[colIndex("diff")] || 0),
+    reason: row[colIndex("reason")] ? String(row[colIndex("reason")]) : undefined,
     status: (row[colIndex("status")] as "pending" | "approved" | "locked") || "pending",
   }));
 
@@ -609,26 +604,18 @@ export async function getDiffLogs(): Promise<DiffLog[]> {
 /**
  * サプライヤーレポートを追加
  */
-export async function addSupplierReport(report: {
-  reportDate: string;
-  itemId: string;
-  itemCode: string;
-  itemName: string;
-  discrepancy: number;
-  reason: string;
-}): Promise<string> {
+export async function addSupplierReport(report: Omit<SupplierReport, 'id'>): Promise<string> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "SupplierReports!A1";
 
   const id = `SR_${Date.now()}`;
   const values = [[
     id,
-    report.reportDate,
-    report.itemId,
-    report.itemCode,
-    report.itemName,
-    report.discrepancy,
-    report.reason,
+    report.month,
+    report.item_code,
+    report.item_name,
+    report.qty,
+    report.is_new_item ? "true" : "false",
   ]];
 
   await sheets.spreadsheets.values.append({

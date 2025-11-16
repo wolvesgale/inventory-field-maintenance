@@ -25,21 +25,21 @@ export const authOptions: NextAuthOptions = {
 
         try {
           const user = await getUserByLoginId(credentials.loginId);
-          console.log('[DEBUG] getUserByLoginId result:', user ? { ...user, passwordHash: '***' } : null);
+          console.log('[DEBUG] getUserByLoginId result:', user ? { ...user, password_hash: '***' } : null);
 
           if (!user) {
             console.log('[DEBUG] User not found or not active');
             return null;
           }
 
-          if (!user.passwordHash) {
-            console.log('[DEBUG] User has no passwordHash');
+          if (!user.password_hash) {
+            console.log('[DEBUG] User has no password_hash');
             return null;
           }
 
           const ok = await bcrypt.compare(
             credentials.password,
-            user.passwordHash
+            user.password_hash
           );
           console.log('[DEBUG] bcrypt.compare result:', ok);
           
@@ -51,8 +51,8 @@ export const authOptions: NextAuthOptions = {
           console.log('[DEBUG] Auth successful, returning user object');
           return {
             id: user.id,
-            name: user.name || user.loginId,
-            email: `${user.loginId}@dummy.local`,
+            name: user.name || user.login_id,
+            email: `${user.login_id}@dummy.local`,
             role: user.role,
             area: user.area,
           } as any;
