@@ -3,8 +3,8 @@ import { google } from "googleapis";
 
 export type AppUser = {
   id: string;
-  loginId: string;
-  passwordHash: string;
+  login_id: string;
+  password_hash: string;
   role: "worker" | "manager" | "admin" | string;
   name: string;
   area?: string;
@@ -13,41 +13,42 @@ export type AppUser = {
 
 export type InventoryItem = {
   id: string;
-  code: string;
-  name: string;
+  item_code: string;
+  item_name: string;
   category: string;
   unit: string;
-  standardQuantity: number;
-  minQuantity: number;
-  location: string;
+  created_at?: string;
+  new_flag?: boolean;
 };
 
 export type Transaction = {
   id: string;
-  itemId: string;
-  itemCode: string;
-  itemName: string;
-  type: "add" | "remove" | "adjustment";
-  quantity: number;
-  reason: string;
-  workerId: string;
-  workerName: string;
+  item_code: string;
+  item_name: string;
+  type: "IN" | "OUT";
+  qty: number;
+  reason?: string;
+  user_id: string;
+  user_name: string;
   area: string;
-  timestamp: string;
+  date: string;
   status: "draft" | "pending" | "approved" | "locked";
-  approvedBy?: string;
-  approvalTime?: string;
+  approved_by?: string;
+  approved_at?: string;
 };
 
 export type PhysicalCount = {
   id: string;
-  countDate: string;
-  itemId: string;
-  itemCode: string;
-  itemName: string;
-  countedQuantity: number;
-  systemQuantity: number;
+  date: string;
+  item_code: string;
+  item_name: string;
+  expected_qty: number;
+  actual_qty: number;
   difference: number;
+  user_id: string;
+  user_name: string;
+  location: string;
+  status: "draft" | "confirmed";
   workerId: string;
   workerName: string;
   area: string;
