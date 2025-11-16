@@ -30,6 +30,8 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
+        const trimmedLoginId = credentials.loginId.trim();
+
         try {
           const user = await getUserByLoginId(loginId);
           console.log("authorize: loaded user from sheet =", user);
