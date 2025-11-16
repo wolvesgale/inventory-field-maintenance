@@ -7,62 +7,27 @@ import { getUserByLoginId } from "@/lib/sheets";
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
-      name: "Inventory Login",
+      name: "Credentials",
       credentials: {
         loginId: { label: "ログインID", type: "text" },
         password: { label: "パスワード", type: "password" },
       },
       async authorize(credentials) {
-        console.log("authorize: raw credentials =", credentials);
+        console.log("[authorize] called with:", credentials);
 
-        if (!credentials) {
-          console.log("authorize: no credentials");
+        if (!credentials?.loginId) {
+          console.log("[authorize] no loginId");
           return null;
         }
 
-        const loginId = credentials.loginId?.trim();
-        const password = credentials.password ?? "";
+        const user = {
+          id: credentials.loginId,
+          name: "Debug User",
+          role: "MANAGER",
+        } as const;
 
-        console.log("authorize: loginId =", loginId);
-
-        if (!loginId || !password) {
-          console.log("authorize: missing loginId or password");
-          return null;
-        }
-
-        const trimmedLoginId = credentials.loginId.trim();
-
-        try {
-          const user = await getUserByLoginId(loginId);
-          console.log("authorize: loaded user from sheet =", user);
-
-          if (!user) {
-            console.log("authorize: user not found");
-            return null;
-          }
-
-          if (user.active === false || String(user.active).toUpperCase() === "FALSE") {
-            console.log("authorize: user is not active");
-            return null;
-          }
-
-          // const ok = await bcrypt.compare(password, user.password_hash);
-          // if (!ok) {
-          //   console.log("authorize: password mismatch");
-          //   return null;
-          // }
-
-          return {
-            id: String(user.id ?? user.login_id),
-            name: user.name ?? user.login_id,
-            email: `${user.login_id}@example.com`,
-            role: user.role,
-            area: user.area,
-          } as any;
-        } catch (error) {
-          console.error("authorize: unexpected error", error);
-          return null;
-        }
+        console.log("[authorize] returning user:", user);
+        return user;
       },
     }),
   ],
