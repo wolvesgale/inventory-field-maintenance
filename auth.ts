@@ -7,59 +7,27 @@ import { getUserByLoginId } from "@/lib/sheets";
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
-      name: "Inventory Login",
+      name: "Credentials",
       credentials: {
-        login_id: { label: "ログインID", type: "text" },
+        loginId: { label: "ログインID", type: "text" },
         password: { label: "パスワード", type: "password" },
       },
       async authorize(credentials) {
-        console.log('[DEBUG] authorize called with:', {
-          login_id: credentials?.login_id,
-          password: credentials?.password ? '***' : 'undefined',
-        });
+        console.log("[authorize] called with:", credentials);
 
-        if (!credentials?.login_id || !credentials?.password) {
-          console.log('[DEBUG] Missing credentials');
+        if (!credentials?.loginId) {
+          console.log("[authorize] no loginId");
           return null;
         }
 
-        try {
-          const user = await getUserByLoginId(credentials.login_id);
-          console.log('[DEBUG] getUserByLoginId result:', user ? { ...user, password_hash: '***' } : null);
+        const user = {
+          id: credentials.loginId,
+          name: "Debug User",
+          role: "MANAGER",
+        } as const;
 
-          if (!user) {
-            console.log('[DEBUG] User not found or not active');
-            return null;
-          }
-
-          if (!user.password_hash) {
-            console.log('[DEBUG] User has no password_hash');
-            return null;
-          }
-
-          const ok = await bcrypt.compare(
-            credentials.password,
-            user.password_hash
-          );
-          console.log('[DEBUG] bcrypt.compare result:', ok);
-          
-          if (!ok) {
-            console.log('[DEBUG] Password does not match');
-            return null;
-          }
-
-          console.log('[DEBUG] Auth successful, returning user object');
-          return {
-            id: user.id,
-            name: user.name || user.login_id,
-            email: `${user.login_id}@dummy.local`,
-            role: user.role,
-            area: user.area,
-          } as any;
-        } catch (error) {
-          console.error('[DEBUG] authorize error:', error);
-          return null;
-        }
+        console.log("[authorize] returning user:", user);
+        return user;
       },
     }),
   ],

@@ -88,7 +88,7 @@ export default function NewTransactionPage() {
           item_code: itemCode,
           item_name: itemName || undefined,
           qty: parseInt(qty),
-          isNewItem,
+          is_new_item: isNewItem,
         }),
       });
 
