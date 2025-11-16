@@ -49,13 +49,13 @@ export async function POST(request: NextRequest) {
       if (!reportMap.has(key)) {
         const item = items.find(i => i.code === tx.itemCode);
         reportMap.set(key, {
-          itemCode: tx.itemCode,
-          itemName: item?.name || '不明',
-          expectedQty: 0,
-          actualQty: 0,
+          item_code: tx.itemCode,
+          item_name: item?.name || '不明',
+          expected_qty: 0,
+          actual_qty: 0,
           diff: 0,
-          hasDiff: false,
-          isNewItem: false,
+          has_diff: false,
+          is_new_item: false,
         });
       }
 

@@ -35,15 +35,25 @@ cd inventory-field-maintenance
 npm install
 ```
 
-### 3. 環境変数を設定
+### 3. 環境変数の設定
 
-`.env.example` をコピーして `.env.local` を作成し、Google Sheets APIの認証情報を設定してください。
+`.env.local` ファイルをプロジェクト直下に作成し、以下の環境変数を設定してください。
+（`.env.local` は `.gitignore` に含まれるため、秘密情報はコミットされません）
 
 ```bash
-cp .env.example .env.local
+# NextAuth設定
+NEXTAUTH_SECRET=your-random-secret-key-32-chars-or-more
+
+# Google Sheets API設定
+GOOGLE_SERVICE_ACCOUNT_EMAIL=xxxxx@xxxxx.iam.gserviceaccount.com
+GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+GOOGLE_SHEETS_SPREADSHEET_ID=1hKEw4t0X64GrfHIyXvQYTZ8_EUMBfWEknB_W_QBAk0Q
 ```
 
-詳細な設定方法は「Google Sheets API設定」セクションを参照してください。
+**重要**: 
+- `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` の改行は `\n` として記述してください
+- 秘密鍵の前後の `"-----BEGIN PRIVATE KEY-----"` と `"-----END PRIVATE KEY-----"` は含める必要があります
+- `.env.local` をコミットしないよう、`.gitignore` で除外されていることを確認してください
 
 ### 4. ローカルサーバーを起動
 
@@ -111,24 +121,48 @@ npm run dev
 2. 新規プロジェクトを作成
 3. **Google Sheets API** を有効化
 
-### 2. サービスアカウント作成
+### 2. サービスアカウント作成と秘密鍵の取得
 
-1. 「認証情報」 → 「サービスアカウント」 → 「サービスアカウント作成」
-2. 適切な名前を入力（例：inventory-sheets）
-3. サービスアカウント作成後、「キー」タブで JSON キーを作成
-4. ダウンロードした JSON ファイルから以下を抽出：
-   - `client_email` → `GOOGLE_SERVICE_ACCOUNT_EMAIL`
-   - `private_key` → `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
-
-### 3. スプレッドシート共有
-
-1. スプレッドシートを作成
-2. 共有設定で、上記サービスアカウントの `client_email` に編集権限を付与
-3. スプレッドシートのIDを取得：
+1. 「IAMと管理」 → 「認証情報」 → 「認証情報を作成」 → 「サービスアカウント」
+2. サービスアカウント名を入力（例：`inventory-sheets`）
+3. 作成後、作成したサービスアカウントをクリック
+4. 「キー」タブで 「鍵を追加」 → 「新しい鍵を作成」 → 「JSON」を選択
+5. ダウンロードされた JSON ファイルから以下の情報を抽出：
+   ```json
+   {
+     "type": "service_account",
+     "project_id": "...",
+     "private_key_id": "...",
+     "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+     "client_email": "xxxx@xxxx.iam.gserviceaccount.com",
+     ...
+   }
    ```
-   https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/...
+   - `client_email` を `GOOGLE_SERVICE_ACCOUNT_EMAIL` に設定
+   - `private_key` を `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` に設定（`\n` は改行のままで OK）
+
+### 3. スプレッドシートの準備と共有
+
+1. [Google Sheets](https://sheets.google.com) で新規スプレッドシートを作成
+2. スプレッドシートを開き、URL から ID を取得：
    ```
-4. `.env.local` に設定
+   https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit
+   ```
+3. 共有ボタンをクリックし、サービスアカウントの `client_email` に **編集者** 権限を付与
+4. 取得した `SPREADSHEET_ID` を `.env.local` の `GOOGLE_SHEETS_SPREADSHEET_ID` に設定
+
+### 4. シートの設定
+
+スプレッドシート内に以下のシート（タブ）を作成してください：
+
+| シート名 | 説明 | ヘッダ行の例 |
+|---------|------|-----------|
+| `Users` | ユーザー（従業員）マスター | id, login_id, password_hash, role, name, area, active |
+| `Items` | 商品マスター | id, code, name, category, unit, standard_quantity, min_quantity, location |
+| `Transactions` | 入出庫トランザクション | id, item_id, item_code, item_name, type, quantity, reason, worker_id, worker_name, area, timestamp, status, approved_by, approval_time |
+| `PhysicalCount` | 月末棚卸データ | id, count_date, item_id, item_code, item_name, counted_quantity, system_quantity, difference, worker_id, worker_name, area, status |
+| `DiffLog` | 差異ログ | id, physical_count_id, item_id, item_code, item_name, difference, reported_date, status |
+| `SupplierReports` | メーカー報告書 | id, report_date, item_id, item_code, item_name, discrepancy, reason |
 
 ## デプロイ
 

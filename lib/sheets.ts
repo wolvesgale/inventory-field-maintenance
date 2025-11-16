@@ -71,7 +71,13 @@ function getSheetsClient() {
   const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
 
   if (!clientEmail || !privateKey || !spreadsheetId) {
-    throw new Error("Google Sheets の環境変数が不足しています");
+    console.error('[DEBUG sheets] Missing environment variables:', {
+      hasEmail: !!clientEmail,
+      hasKey: !!privateKey,
+      hasSpreadsheetId: !!spreadsheetId,
+      envKeys: Object.keys(process.env).filter(k => k.includes('GOOGLE') || k.includes('SHEETS')),
+    });
+    throw new Error("Google Sheets の環境変数が不足しています。.env.local に以下を設定してください: GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, GOOGLE_SHEETS_SPREADSHEET_ID");
   }
 
   const auth = new google.auth.JWT({
