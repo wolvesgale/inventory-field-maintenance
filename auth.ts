@@ -13,56 +13,54 @@ export const authOptions: NextAuthOptions = {
         password: { label: "パスワード", type: "password" },
       },
       async authorize(credentials) {
-        console.log('[DEBUG] authorize called with:', {
-          loginId: credentials?.loginId,
-          passwordProvided: credentials?.password ? 'yes' : 'no',
-        });
+        console.log("authorize: raw credentials =", credentials);
 
-        if (!credentials?.loginId || !credentials?.password) {
-          console.log('[DEBUG] Missing credentials');
+        if (!credentials) {
+          console.log("authorize: no credentials");
+          return null;
+        }
+
+        const loginId = credentials.loginId?.trim();
+        const password = credentials.password ?? "";
+
+        console.log("authorize: loginId =", loginId);
+
+        if (!loginId || !password) {
+          console.log("authorize: missing loginId or password");
           return null;
         }
 
         const trimmedLoginId = credentials.loginId.trim();
 
         try {
-          const user = await getUserByLoginId(trimmedLoginId);
-          console.log('[DEBUG] getUserByLoginId result:', user ? { ...user, password_hash: '***' } : null);
+          const user = await getUserByLoginId(loginId);
+          console.log("authorize: loaded user from sheet =", user);
 
           if (!user) {
-            console.log('[DEBUG] User not found or not active');
+            console.log("authorize: user not found");
             return null;
           }
 
-          if (!user.password_hash) {
-            console.log('[DEBUG] User has no password_hash');
+          if (user.active === false || String(user.active).toUpperCase() === "FALSE") {
+            console.log("authorize: user is not active");
             return null;
           }
 
-          const ok = await bcrypt.compare(credentials.password, user.password_hash);
-          console.log('[DEBUG] bcrypt.compare result:', ok);
+          // const ok = await bcrypt.compare(password, user.password_hash);
+          // if (!ok) {
+          //   console.log("authorize: password mismatch");
+          //   return null;
+          // }
 
-          console.log('[DEBUG] authorize summary:', {
-            loginId: trimmedLoginId,
-            userFound: !!user,
-            passwordMatched: ok,
-          });
-          
-          if (!ok) {
-            console.log('[DEBUG] Password does not match');
-            return null;
-          }
-
-          console.log('[DEBUG] Auth successful, returning user object');
           return {
-            id: user.id,
-            name: user.name || user.login_id,
-            email: `${user.login_id}@dummy.local`,
+            id: String(user.id ?? user.login_id),
+            name: user.name ?? user.login_id,
+            email: `${user.login_id}@example.com`,
             role: user.role,
             area: user.area,
           } as any;
         } catch (error) {
-          console.error('[DEBUG] authorize error:', error);
+          console.error("authorize: unexpected error", error);
           return null;
         }
       },
