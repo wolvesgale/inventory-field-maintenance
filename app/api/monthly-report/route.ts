@@ -38,42 +38,42 @@ export async function POST(request: NextRequest) {
 
     // 対象月のデータを抽出
     const monthTransactions = transactions.filter(tx => 
-      tx.date.startsWith(month) && (tx.status === 'approved' || tx.status === 'locked')
+      tx.timestamp.startsWith(month) && (tx.status === 'approved' || tx.status === 'locked')
     );
 
     // 品目ごとに集計
     const reportMap = new Map<string, MonthlyReportItem>();
 
     monthTransactions.forEach(tx => {
-      const key = tx.item_code;
+      const key = tx.itemCode;
       if (!reportMap.has(key)) {
-        const item = items.find(i => i.item_code === tx.item_code);
+        const item = items.find(i => i.code === tx.itemCode);
         reportMap.set(key, {
-          item_code: tx.item_code,
-          item_name: item?.item_name || '不明',
-          expected_qty: 0,
-          actual_qty: 0,
+          itemCode: tx.itemCode,
+          itemName: item?.name || '不明',
+          expectedQty: 0,
+          actualQty: 0,
           diff: 0,
-          has_diff: false,
-          is_new_item: item?.new_flag || false,
+          hasDiff: false,
+          isNewItem: false,
         });
       }
 
       const report = reportMap.get(key)!;
-      if (tx.type === 'IN') {
-        report.expected_qty += tx.qty;
+      if (tx.type === 'add') {
+        report.expected_qty += tx.quantity;
       } else {
-        report.expected_qty -= tx.qty;
+        report.expected_qty -= tx.quantity;
       }
     });
 
     // DiffLog から差異情報を関連付け
     diffs.forEach(diff => {
-      const report = reportMap.get(diff.item_code);
+      const report = reportMap.get(diff.itemCode);
       if (report) {
-        report.actual_qty = diff.actual_qty;
-        report.diff = diff.diff;
-        report.has_diff = diff.diff !== 0;
+        report.actual_qty = diff.difference;
+        report.diff = diff.difference;
+        report.has_diff = diff.difference !== 0;
       }
     });
 
@@ -83,20 +83,18 @@ export async function POST(request: NextRequest) {
     if (action === 'finalize') {
       // Transactions の status を locked に更新
       for (const tx of monthTransactions) {
-        await updateTransactionStatus(tx.id || '', 'locked');
+        await updateTransactionStatus(tx.id, 'locked');
       }
-
-      // Items の new_flag を FALSE に更新（create_at が対象月以前の場合）
-      // Note: 簡易版のため省略。実装時は Sheets API で批量更新
 
       // SupplierReports に記録
       for (const report of reportList) {
         await addSupplierReport({
-          month,
-          item_code: report.item_code,
-          item_name: report.item_name,
-          qty: report.expected_qty,
-          is_new_item: report.is_new_item,
+          reportDate: month,
+          itemId: report.item_code,
+          itemCode: report.item_code,
+          itemName: report.item_name,
+          discrepancy: report.diff,
+          reason: 'Monthly inventory check',
         });
       }
     }

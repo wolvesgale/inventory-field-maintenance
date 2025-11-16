@@ -1,11 +1,8 @@
+// auth.ts
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-
-/**
- * NextAuth v4 設定
- * まずはデモユーザーだけで動かし、
- * 後で Google Sheets 連携に差し替える前提の最小構成。
- */
+import bcrypt from "bcryptjs";
+import { getUserByLoginId } from "@/lib/sheets";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -16,25 +13,53 @@ export const authOptions: NextAuthOptions = {
         password: { label: "パスワード", type: "password" },
       },
       async authorize(credentials) {
+        console.log('[DEBUG] authorize called with:', {
+          loginId: credentials?.loginId,
+          password: credentials?.password ? '***' : 'undefined',
+        });
+
         if (!credentials?.loginId || !credentials?.password) {
+          console.log('[DEBUG] Missing credentials');
           return null;
         }
 
-        // TODO: 後で Sheets 連携に差し替える。
-        // ひとまず「demo / demo」でログインできるデモユーザーを用意。
-        if (
-          credentials.loginId === "demo" &&
-          credentials.password === "demo"
-        ) {
-          return {
-            id: "1",
-            name: "デモ管理者",
-            email: "demo@example.com",
-            role: "manager",
-          } as any;
-        }
+        try {
+          const user = await getUserByLoginId(credentials.loginId);
+          console.log('[DEBUG] getUserByLoginId result:', user ? { ...user, passwordHash: '***' } : null);
 
-        return null;
+          if (!user) {
+            console.log('[DEBUG] User not found or not active');
+            return null;
+          }
+
+          if (!user.passwordHash) {
+            console.log('[DEBUG] User has no passwordHash');
+            return null;
+          }
+
+          const ok = await bcrypt.compare(
+            credentials.password,
+            user.passwordHash
+          );
+          console.log('[DEBUG] bcrypt.compare result:', ok);
+          
+          if (!ok) {
+            console.log('[DEBUG] Password does not match');
+            return null;
+          }
+
+          console.log('[DEBUG] Auth successful, returning user object');
+          return {
+            id: user.id,
+            name: user.name || user.loginId,
+            email: `${user.loginId}@dummy.local`,
+            role: user.role,
+            area: user.area,
+          } as any;
+        } catch (error) {
+          console.error('[DEBUG] authorize error:', error);
+          return null;
+        }
       },
     }),
   ],
@@ -48,12 +73,14 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         (token as any).role = (user as any).role ?? "worker";
+        (token as any).area = (user as any).area ?? "";
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         (session.user as any).role = (token as any).role;
+        (session.user as any).area = (token as any).area;
       }
       return session;
     },

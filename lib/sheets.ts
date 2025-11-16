@@ -1,478 +1,635 @@
-/**
- * Google Sheets API統合モジュール
- * サービスアカウント認証 + Google Sheets API
- */
+// lib/sheets.ts
+import { google } from "googleapis";
 
-import { google } from 'googleapis';
-import {
-  User,
-  Item,
-  Transaction,
-  PhysicalCount,
-  DiffLog,
-  SupplierReport,
-  StockLedgerEntry,
-} from '@/types';
+export type AppUser = {
+  id: string;
+  loginId: string;
+  passwordHash: string;
+  role: "worker" | "manager" | "admin" | string;
+  name: string;
+  area?: string;
+  active: boolean;
+};
 
-// ============================================================
-// 初期化関数
-// ============================================================
+export type InventoryItem = {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  unit: string;
+  standardQuantity: number;
+  minQuantity: number;
+  location: string;
+};
 
-function getAuthClient() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(
-    /\\n/g,
-    '\n'
-  );
+export type Transaction = {
+  id: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  type: "add" | "remove" | "adjustment";
+  quantity: number;
+  reason: string;
+  workerId: string;
+  workerName: string;
+  area: string;
+  timestamp: string;
+  status: "draft" | "pending" | "approved" | "locked";
+  approvedBy?: string;
+  approvalTime?: string;
+};
 
-  if (!email || !privateKey) {
-    throw new Error(
-      'Missing Google service account credentials in environment variables'
-    );
-  }
+export type PhysicalCount = {
+  id: string;
+  countDate: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  countedQuantity: number;
+  systemQuantity: number;
+  difference: number;
+  workerId: string;
+  workerName: string;
+  area: string;
+  status: "draft" | "confirmed";
+};
 
-  return new google.auth.JWT({
-    email,
-    key: privateKey,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
-}
+export type DiffLog = {
+  id: string;
+  physicalCountId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  difference: number;
+  reportedDate: string;
+  status: "pending" | "approved" | "locked";
+};
 
 function getSheetsClient() {
-  const auth = getAuthClient();
-  return google.sheets({ version: 'v4', auth });
+  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+
+  if (!clientEmail || !privateKey || !spreadsheetId) {
+    throw new Error("Google Sheets の環境変数が不足しています");
+  }
+
+  const auth = new google.auth.JWT({
+    email: clientEmail,
+    key: privateKey.replace(/\\n/g, "\n"),
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+
+  const sheets = google.sheets({ version: "v4", auth });
+
+  return { sheets, spreadsheetId };
 }
 
-function getSpreadsheetId(): string {
-  const id = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
-  if (!id) {
-    throw new Error('Missing GOOGLE_SHEETS_SPREADSHEET_ID in environment variables');
+/**
+ * login_id から 1件だけユーザーを取得
+ */
+export async function getUserByLoginId(loginId: string): Promise<AppUser | null> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+
+  const range = "Users!A1:G1000";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values;
+  if (!rows || rows.length < 2) {
+    console.log('[DEBUG sheets] No rows found in Users sheet');
+    return null;
   }
+
+  const header = rows[0];
+  const dataRows = rows.slice(1);
+
+  console.log('[DEBUG sheets] Header:', header);
+
+  const colIndex = (name: string) => header.indexOf(name);
+
+  const idxId = colIndex("id");
+  const idxLoginId = colIndex("login_id");
+  const idxPassword = colIndex("password_hash");
+  const idxRole = colIndex("role");
+  const idxName = colIndex("name");
+  const idxArea = colIndex("area");
+  const idxActive = colIndex("active");
+
+  if (
+    idxId === -1 ||
+    idxLoginId === -1 ||
+    idxPassword === -1 ||
+    idxRole === -1 ||
+    idxName === -1 ||
+    idxActive === -1
+  ) {
+    console.error('[DEBUG sheets] Column index error:', {
+      idxId,
+      idxLoginId,
+      idxPassword,
+      idxRole,
+      idxName,
+      idxArea,
+      idxActive,
+    });
+    throw new Error("Users シートのヘッダが想定と異なります");
+  }
+
+  const row = dataRows.find((r) => r[idxLoginId] === loginId);
+  console.log('[DEBUG sheets] Looking for loginId:', loginId);
+  console.log('[DEBUG sheets] Found row:', row ? { ...row } : null);
+
+  if (!row) {
+    console.log('[DEBUG sheets] No matching row found');
+    return null;
+  }
+
+  const activeRaw = row[idxActive];
+  const isActive =
+    String(activeRaw).toLowerCase() === "true" ||
+    String(activeRaw) === "1" ||
+    String(activeRaw) === "TRUE";
+
+  console.log('[DEBUG sheets] Active check:', { activeRaw, isActive });
+
+  if (!isActive) {
+    console.log('[DEBUG sheets] User is not active');
+    return null;
+  }
+
+  const user: AppUser = {
+    id: String(row[idxId]),
+    loginId: String(row[idxLoginId]),
+    passwordHash: String(row[idxPassword] ?? ""),
+    role: String(row[idxRole] ?? "worker"),
+    name: String(row[idxName] ?? ""),
+    area: idxArea >= 0 ? String(row[idxArea] ?? "") : undefined,
+    active: isActive,
+  };
+
+  console.log('[DEBUG sheets] Returning user:', { ...user, passwordHash: '***' });
+  return user;
+}
+
+/**
+ * 全商品を取得
+ */
+export async function getItems(): Promise<InventoryItem[]> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "Items!A1:H1000";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) return [];
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+
+  const items = rows.slice(1).map((row) => ({
+    id: String(row[colIndex("id")] || ""),
+    code: String(row[colIndex("code")] || ""),
+    name: String(row[colIndex("name")] || ""),
+    category: String(row[colIndex("category")] || ""),
+    unit: String(row[colIndex("unit")] || ""),
+    standardQuantity: Number(row[colIndex("standard_quantity")] || 0),
+    minQuantity: Number(row[colIndex("min_quantity")] || 0),
+    location: String(row[colIndex("location")] || ""),
+  }));
+
+  return items;
+}
+
+/**
+ * 全トランザクションを取得
+ */
+export async function getTransactions(): Promise<Transaction[]> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "Transactions!A1:N1000";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) return [];
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+
+  const transactions = rows.slice(1).map((row) => ({
+    id: String(row[colIndex("id")] || ""),
+    itemId: String(row[colIndex("item_id")] || ""),
+    itemCode: String(row[colIndex("item_code")] || ""),
+    itemName: String(row[colIndex("item_name")] || ""),
+    type: (row[colIndex("type")] as "add" | "remove" | "adjustment") || "add",
+    quantity: Number(row[colIndex("quantity")] || 0),
+    reason: String(row[colIndex("reason")] || ""),
+    workerId: String(row[colIndex("worker_id")] || ""),
+    workerName: String(row[colIndex("worker_name")] || ""),
+    area: String(row[colIndex("area")] || ""),
+    timestamp: String(row[colIndex("timestamp")] || ""),
+    status: (row[colIndex("status")] as "draft" | "pending" | "approved" | "locked") || "draft",
+    approvedBy: row[colIndex("approved_by")] ? String(row[colIndex("approved_by")]) : undefined,
+    approvalTime: row[colIndex("approval_time")] ? String(row[colIndex("approval_time")]) : undefined,
+  }));
+
+  return transactions;
+}
+
+/**
+ * 新規トランザクションを追加
+ */
+export async function addTransaction(transaction: Omit<Transaction, 'id'>): Promise<string> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "Transactions!A1";
+
+  const id = `TRX_${Date.now()}`;
+  const values = [[
+    id,
+    transaction.itemId,
+    transaction.itemCode,
+    transaction.itemName,
+    transaction.type,
+    transaction.quantity,
+    transaction.reason,
+    transaction.workerId,
+    transaction.workerName,
+    transaction.area,
+    transaction.timestamp,
+    transaction.status,
+    transaction.approvedBy || "",
+    transaction.approvalTime || "",
+  ]];
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values },
+  });
+
   return id;
 }
 
-// ============================================================
-// ユーティリティ関数
-// ============================================================
-
 /**
- * 行データを型に変換（汎用）
+ * 全棚卸データを取得
  */
-function parseRow<T>(headers: string[], row: any[]): T {
-  const obj: any = {};
-  headers.forEach((header, index) => {
-    obj[header] = row[index] ?? null;
+export async function getPhysicalCounts(): Promise<PhysicalCount[]> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "PhysicalCount!A1:J1000";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
   });
-  return obj as T;
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) return [];
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+
+  const counts = rows.slice(1).map((row) => ({
+    id: String(row[colIndex("id")] || ""),
+    countDate: String(row[colIndex("count_date")] || ""),
+    itemId: String(row[colIndex("item_id")] || ""),
+    itemCode: String(row[colIndex("item_code")] || ""),
+    itemName: String(row[colIndex("item_name")] || ""),
+    countedQuantity: Number(row[colIndex("counted_quantity")] || 0),
+    systemQuantity: Number(row[colIndex("system_quantity")] || 0),
+    difference: Number(row[colIndex("difference")] || 0),
+    workerId: String(row[colIndex("worker_id")] || ""),
+    workerName: String(row[colIndex("worker_name")] || ""),
+    area: String(row[colIndex("area")] || ""),
+    status: (row[colIndex("status")] as "draft" | "confirmed") || "draft",
+  }));
+
+  return counts;
 }
 
 /**
- * 型オブジェクトを行データに変換（汎用）
+ * 新規棚卸データを追加
  */
-function serializeRow(obj: Record<string, any>, headers: string[]): any[] {
-  return headers.map((header) => obj[header] ?? '');
+export async function addPhysicalCount(count: Omit<PhysicalCount, 'id'>): Promise<string> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "PhysicalCount!A1";
+
+  const id = `PC_${Date.now()}`;
+  const values = [[
+    id,
+    count.countDate,
+    count.itemId,
+    count.itemCode,
+    count.itemName,
+    count.countedQuantity,
+    count.systemQuantity,
+    count.difference,
+    count.workerId,
+    count.workerName,
+    count.area,
+    count.status,
+  ]];
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values },
+  });
+
+  return id;
 }
 
-// ============================================================
-// Users シート関連
-// ============================================================
+/**
+ * 差異ログを追加
+ */
+export async function addDiffLog(log: Omit<DiffLog, 'id'>): Promise<string> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "DiffLog!A1";
 
-const USER_HEADERS = ['id', 'login_id', 'password_hash', 'role', 'name', 'area', 'active'];
+  const id = `DIFF_${Date.now()}`;
+  const values = [[
+    id,
+    log.physicalCountId,
+    log.itemId,
+    log.itemCode,
+    log.itemName,
+    log.difference,
+    log.reportedDate,
+    log.status,
+  ]];
 
-export async function getUsers(): Promise<User[]> {
-  try {
-    const sheets = getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: getSpreadsheetId(),
-      range: 'Users!A2:G',
-    });
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values },
+  });
 
-    const rows = response.data.values || [];
-    return rows.map((row) => {
-      const user = parseRow<any>(USER_HEADERS, row);
-      return {
-        id: user.id,
-        login_id: user.login_id,
-        password_hash: user.password_hash,
-        role: user.role,
-        name: user.name,
-        area: user.area,
-        active: user.active === 'TRUE' || user.active === true,
-      } as User;
-    });
-  } catch (error) {
-    console.error('Failed to fetch users:', error);
-    throw error;
-  }
+  return id;
 }
 
-export async function getUserByLoginId(login_id: string): Promise<User | null> {
-  const users = await getUsers();
-  return users.find((u) => u.login_id === login_id) || null;
+/**
+ * トランザクションのステータスを更新
+ */
+export async function updateTransactionStatus(
+  id: string,
+  status: "draft" | "pending" | "approved" | "locked",
+  approvedBy?: string,
+  approvalTime?: string
+): Promise<void> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "Transactions!A1:N1000";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+  const idIdx = colIndex("id");
+
+  const rowIndex = rows.findIndex((r) => r[idIdx] === id);
+  if (rowIndex === -1) return;
+
+  const statusIdx = colIndex("status");
+  const approvedByIdx = colIndex("approved_by");
+  const approvalTimeIdx = colIndex("approval_time");
+
+  const updateRange = `Transactions!L${rowIndex + 1}:N${rowIndex + 1}`;
+  const values = [[status, approvedBy || "", approvalTime || ""]];
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: updateRange,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values },
+  });
 }
 
-// ============================================================
-// Items シート関連
-// ============================================================
+/**
+ * 在庫集計を取得
+ */
+export async function getStockAggregate(): Promise<
+  Array<{
+    itemId: string;
+    itemCode: string;
+    itemName: string;
+    totalQuantity: number;
+    area: string;
+  }>
+> {
+  const transactions = await getTransactions();
+  const approved = transactions.filter((t) => t.status === "approved");
 
-const ITEM_HEADERS = ['item_code', 'item_name', 'category', 'unit', 'created_at', 'new_flag'];
+  const aggregate: Record<
+    string,
+    {
+      itemId: string;
+      itemCode: string;
+      itemName: string;
+      totalQuantity: number;
+      area: string;
+    }
+  > = {};
 
-export async function getItems(): Promise<Item[]> {
-  try {
-    const sheets = getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: getSpreadsheetId(),
-      range: 'Items!A2:F',
-    });
+  approved.forEach((t) => {
+    const key = `${t.itemId}_${t.area}`;
+    if (!aggregate[key]) {
+      aggregate[key] = {
+        itemId: t.itemId,
+        itemCode: t.itemCode,
+        itemName: t.itemName,
+        totalQuantity: 0,
+        area: t.area,
+      };
+    }
 
-    const rows = response.data.values || [];
-    return rows.map((row) => {
-      const item = parseRow<any>(ITEM_HEADERS, row);
-      return {
-        item_code: item.item_code,
-        item_name: item.item_name,
-        category: item.category || '',
-        unit: item.unit || '個',
-        created_at: item.created_at,
-        new_flag: item.new_flag === 'TRUE' || item.new_flag === true,
-      } as Item;
-    });
-  } catch (error) {
-    console.error('Failed to fetch items:', error);
-    throw error;
-  }
+    if (t.type === "add") {
+      aggregate[key].totalQuantity += t.quantity;
+    } else {
+      aggregate[key].totalQuantity -= t.quantity;
+    }
+  });
+
+  return Object.values(aggregate);
 }
 
-export async function getItemByCode(code: string): Promise<Item | null> {
+/**
+ * ステータスでトランザクションをフィルタリング
+ */
+export async function getTransactionsByStatus(
+  status: "draft" | "pending" | "approved" | "locked"
+): Promise<Transaction[]> {
+  const transactions = await getTransactions();
+  return transactions.filter((t) => t.status === status);
+}
+
+/**
+ * アイテムコードから商品を検索
+ */
+export async function searchItems(query: string): Promise<InventoryItem[]> {
   const items = await getItems();
-  return items.find((i) => i.item_code === code) || null;
-}
-
-export async function searchItems(query: string): Promise<Item[]> {
-  const items = await getItems();
-  const lowerQuery = query.toLowerCase();
+  const q = query.toLowerCase();
   return items.filter(
     (item) =>
-      item.item_code.toLowerCase().includes(lowerQuery) ||
-      item.item_name.toLowerCase().includes(lowerQuery)
+      item.code.toLowerCase().includes(q) ||
+      item.name.toLowerCase().includes(q)
   );
 }
 
-export async function addItem(item: Omit<Item, 'id'>): Promise<void> {
-  try {
-    const sheets = getSheetsClient();
-    const row = serializeRow(item, ITEM_HEADERS);
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: getSpreadsheetId(),
-      range: 'Items!A:F',
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [row],
-      },
-    });
-  } catch (error) {
-    console.error('Failed to add item:', error);
-    throw error;
-  }
+/**
+ * コードから1件の商品を取得
+ */
+export async function getItemByCode(code: string): Promise<InventoryItem | null> {
+  const items = await getItems();
+  return items.find((item) => item.code === code) || null;
 }
 
-// ============================================================
-// Transactions シート関連
-// ============================================================
+/**
+ * 新規商品を追加
+ */
+export async function addItem(item: Omit<InventoryItem, 'id'>): Promise<string> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "Items!A1";
 
-const TRANSACTION_HEADERS = [
-  'id',
-  'date',
-  'user_id',
-  'area',
-  'type',
-  'item_code',
-  'qty',
-  'slip_photo_url',
-  'status',
-  'approved_by',
-  'approved_at',
-  'comment',
-];
+  const id = `ITEM_${Date.now()}`;
+  const values = [[
+    id,
+    item.code,
+    item.name,
+    item.category,
+    item.unit,
+    item.standardQuantity,
+    item.minQuantity,
+    item.location,
+  ]];
 
-export async function getTransactions(): Promise<Transaction[]> {
-  try {
-    const sheets = getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: getSpreadsheetId(),
-      range: 'Transactions!A2:L',
-    });
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values },
+  });
 
-    const rows = response.data.values || [];
-    return rows.map((row) => {
-      const tx = parseRow<any>(TRANSACTION_HEADERS, row);
+  return id;
+}
+
+/**
+ * すべてのユーザーを取得
+ */
+export async function getUsers(): Promise<AppUser[]> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "Users!A1:G1000";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) return [];
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+
+  const users = rows.slice(1)
+    .map((row) => {
+      const activeRaw = row[colIndex("active")];
+      const isActive =
+        String(activeRaw).toLowerCase() === "true" ||
+        String(activeRaw) === "1" ||
+        String(activeRaw) === "TRUE";
+
       return {
-        id: tx.id,
-        date: tx.date,
-        user_id: tx.user_id,
-        area: tx.area,
-        type: tx.type as any,
-        item_code: tx.item_code,
-        qty: parseInt(tx.qty, 10) || 0,
-        slip_photo_url: tx.slip_photo_url || undefined,
-        status: tx.status as any,
-        approved_by: tx.approved_by || undefined,
-        approved_at: tx.approved_at || undefined,
-        comment: tx.comment || undefined,
-      } as Transaction;
-    });
-  } catch (error) {
-    console.error('Failed to fetch transactions:', error);
-    throw error;
-  }
+        id: String(row[colIndex("id")] || ""),
+        loginId: String(row[colIndex("login_id")] || ""),
+        passwordHash: String(row[colIndex("password_hash")] || ""),
+        role: String(row[colIndex("role")] || "worker"),
+        name: String(row[colIndex("name")] || ""),
+        area: row[colIndex("area")] ? String(row[colIndex("area")]) : undefined,
+        active: isActive,
+      };
+    })
+    .filter((u) => u.active);
+
+  return users;
 }
 
-export async function getTransactionsByUserId(userId: string): Promise<Transaction[]> {
-  const transactions = await getTransactions();
-  return transactions.filter((tx) => tx.user_id === userId);
-}
-
-export async function getTransactionsByStatus(status: string): Promise<Transaction[]> {
-  const transactions = await getTransactions();
-  return transactions.filter((tx) => tx.status === status);
-}
-
-export async function addTransaction(transaction: Omit<Transaction, 'id'>): Promise<void> {
-  try {
-    const sheets = getSheetsClient();
-    const id = Date.now().toString();
-    const dataToWrite = { id, ...transaction };
-    const row = serializeRow(dataToWrite, TRANSACTION_HEADERS);
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: getSpreadsheetId(),
-      range: 'Transactions!A:L',
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [row],
-      },
-    });
-  } catch (error) {
-    console.error('Failed to add transaction:', error);
-    throw error;
-  }
-}
-
-export async function updateTransactionStatus(
-  transactionId: string,
-  status: string,
-  approvedBy?: string,
-  approvedAt?: string
-): Promise<void> {
-  try {
-    const sheets = getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: getSpreadsheetId(),
-      range: 'Transactions!A:L',
-    });
-
-    const rows = response.data.values || [];
-    const rowIndex = rows.findIndex((row) => row[0] === transactionId);
-
-    if (rowIndex === -1) {
-      throw new Error(`Transaction with ID ${transactionId} not found`);
-    }
-
-    const updateRow = [...rows[rowIndex]];
-    updateRow[8] = status; // status column
-    if (approvedBy) updateRow[9] = approvedBy;
-    if (approvedAt) updateRow[10] = approvedAt;
-
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: getSpreadsheetId(),
-      range: `Transactions!A${rowIndex + 1}:L${rowIndex + 1}`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [updateRow],
-      },
-    });
-  } catch (error) {
-    console.error('Failed to update transaction status:', error);
-    throw error;
-  }
-}
-
-// ============================================================
-// PhysicalCount シート関連
-// ============================================================
-
-const PHYSICAL_COUNT_HEADERS = [
-  'id',
-  'date',
-  'user_id',
-  'location',
-  'item_code',
-  'expected_qty',
-  'actual_qty',
-];
-
-export async function getPhysicalCounts(): Promise<PhysicalCount[]> {
-  try {
-    const sheets = getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: getSpreadsheetId(),
-      range: 'PhysicalCount!A2:G',
-    });
-
-    const rows = response.data.values || [];
-    return rows.map((row) => {
-      const pc = parseRow<any>(PHYSICAL_COUNT_HEADERS, row);
-      return {
-        id: pc.id,
-        date: pc.date,
-        user_id: pc.user_id,
-        location: pc.location,
-        item_code: pc.item_code,
-        expected_qty: parseInt(pc.expected_qty, 10) || 0,
-        actual_qty: parseInt(pc.actual_qty, 10) || 0,
-      } as PhysicalCount;
-    });
-  } catch (error) {
-    console.error('Failed to fetch physical counts:', error);
-    throw error;
-  }
-}
-
-export async function addPhysicalCount(pc: Omit<PhysicalCount, 'id'>): Promise<void> {
-  try {
-    const sheets = getSheetsClient();
-    const id = Date.now().toString();
-    const dataToWrite = { id, ...pc };
-    const row = serializeRow(dataToWrite, PHYSICAL_COUNT_HEADERS);
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: getSpreadsheetId(),
-      range: 'PhysicalCount!A:G',
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [row],
-      },
-    });
-  } catch (error) {
-    console.error('Failed to add physical count:', error);
-    throw error;
-  }
-}
-
-// ============================================================
-// DiffLog シート関連
-// ============================================================
-
-const DIFF_LOG_HEADERS = [
-  'id',
-  'date',
-  'item_code',
-  'expected_qty',
-  'actual_qty',
-  'diff',
-  'reason',
-  'resolved_flag',
-];
-
+/**
+ * 差異ログを取得
+ */
 export async function getDiffLogs(): Promise<DiffLog[]> {
-  try {
-    const sheets = getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: getSpreadsheetId(),
-      range: 'DiffLog!A2:H',
-    });
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "DiffLog!A1:H1000";
 
-    const rows = response.data.values || [];
-    return rows.map((row) => {
-      const diff = parseRow<any>(DIFF_LOG_HEADERS, row);
-      return {
-        id: diff.id,
-        date: diff.date,
-        item_code: diff.item_code,
-        expected_qty: parseInt(diff.expected_qty, 10) || 0,
-        actual_qty: parseInt(diff.actual_qty, 10) || 0,
-        diff: parseInt(diff.diff, 10) || 0,
-        reason: diff.reason || undefined,
-        resolved_flag: diff.resolved_flag === 'TRUE' || diff.resolved_flag === true,
-      } as DiffLog;
-    });
-  } catch (error) {
-    console.error('Failed to fetch diff logs:', error);
-    throw error;
-  }
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) return [];
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+
+  const logs = rows.slice(1).map((row) => ({
+    id: String(row[colIndex("id")] || ""),
+    physicalCountId: String(row[colIndex("physical_count_id")] || ""),
+    itemId: String(row[colIndex("item_id")] || ""),
+    itemCode: String(row[colIndex("item_code")] || ""),
+    itemName: String(row[colIndex("item_name")] || ""),
+    difference: Number(row[colIndex("difference")] || 0),
+    reportedDate: String(row[colIndex("reported_date")] || ""),
+    status: (row[colIndex("status")] as "pending" | "approved" | "locked") || "pending",
+  }));
+
+  return logs;
 }
 
-export async function addDiffLog(diffLog: Omit<DiffLog, 'id'>): Promise<void> {
-  try {
-    const sheets = getSheetsClient();
-    const id = Date.now().toString();
-    const dataToWrite = { id, ...diffLog };
-    const row = serializeRow(dataToWrite, DIFF_LOG_HEADERS);
+/**
+ * サプライヤーレポートを追加
+ */
+export async function addSupplierReport(report: {
+  reportDate: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  discrepancy: number;
+  reason: string;
+}): Promise<string> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "SupplierReports!A1";
 
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: getSpreadsheetId(),
-      range: 'DiffLog!A:H',
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [row],
-      },
-    });
-  } catch (error) {
-    console.error('Failed to add diff log:', error);
-    throw error;
-  }
-}
+  const id = `SR_${Date.now()}`;
+  const values = [[
+    id,
+    report.reportDate,
+    report.itemId,
+    report.itemCode,
+    report.itemName,
+    report.discrepancy,
+    report.reason,
+  ]];
 
-// ============================================================
-// SupplierReports シート関連
-// ============================================================
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values },
+  });
 
-const SUPPLIER_REPORT_HEADERS = ['id', 'month', 'item_code', 'item_name', 'qty', 'is_new_item'];
-
-export async function getSupplierReports(): Promise<SupplierReport[]> {
-  try {
-    const sheets = getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: getSpreadsheetId(),
-      range: 'SupplierReports!A2:F',
-    });
-
-    const rows = response.data.values || [];
-    return rows.map((row) => {
-      const report = parseRow<any>(SUPPLIER_REPORT_HEADERS, row);
-      return {
-        id: report.id,
-        month: report.month,
-        item_code: report.item_code,
-        item_name: report.item_name,
-        qty: parseInt(report.qty, 10) || 0,
-        is_new_item: report.is_new_item === 'TRUE' || report.is_new_item === true,
-      } as SupplierReport;
-    });
-  } catch (error) {
-    console.error('Failed to fetch supplier reports:', error);
-    throw error;
-  }
-}
-
-export async function addSupplierReport(report: Omit<SupplierReport, 'id'>): Promise<void> {
-  try {
-    const sheets = getSheetsClient();
-    const id = Date.now().toString();
-    const dataToWrite = { id, ...report };
-    const row = serializeRow(dataToWrite, SUPPLIER_REPORT_HEADERS);
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: getSpreadsheetId(),
-      range: 'SupplierReports!A:F',
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [row],
-      },
-    });
-  } catch (error) {
-    console.error('Failed to add supplier report:', error);
-    throw error;
-  }
+  return id;
 }
