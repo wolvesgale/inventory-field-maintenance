@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
       const report = reportMap.get(key)!;
       if (tx.type === 'add') {
         report.expected_qty += tx.quantity;
-      } else {
+      } else if (tx.type === 'remove') {
         report.expected_qty -= tx.quantity;
       }
     });

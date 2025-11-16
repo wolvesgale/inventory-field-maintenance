@@ -68,22 +68,24 @@ export interface Item {
 // 入出庫取引関連型
 // ============================================================
 
-export type TransactionType = 'IN' | 'OUT';
+export type TransactionType = 'add' | 'remove' | 'adjustment';
 export type TransactionStatus = 'draft' | 'pending' | 'approved' | 'locked';
 
 export interface Transaction {
   id?: string;
-  date: string;
-  user_id: string;
-  area: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
   type: TransactionType;
-  item_code: string;
-  qty: number;
-  slip_photo_url?: string;
+  quantity: number;
+  reason: string;
+  workerId: string;
+  workerName: string;
+  area: string;
+  timestamp: string;
   status: TransactionStatus;
-  approved_by?: string;
-  approved_at?: string;
-  comment?: string;
+  approvedBy?: string;
+  approvalTime?: string;
 }
 
 // ============================================================
@@ -107,23 +109,28 @@ export interface StockLedgerEntry {
 
 export interface PhysicalCount {
   id?: string;
-  date: string;
-  user_id: string;
-  location: string;
-  item_code: string;
-  expected_qty: number;
-  actual_qty: number;
+  countDate: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  countedQuantity: number;
+  systemQuantity: number;
+  difference: number;
+  workerId: string;
+  workerName: string;
+  area: string;
+  status: 'draft' | 'confirmed';
 }
 
 export interface DiffLog {
   id?: string;
-  date: string;
-  item_code: string;
-  expected_qty: number;
-  actual_qty: number;
-  diff: number;
-  reason?: string;
-  resolved_flag: boolean;
+  physicalCountId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  difference: number;
+  reportedDate: string;
+  status: 'pending' | 'approved' | 'locked';
 }
 
 // ============================================================

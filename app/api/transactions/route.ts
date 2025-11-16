@@ -16,22 +16,19 @@ export async function GET(request: NextRequest) {
     }
 
     const transactions = await getTransactions();
-    const users = await getUsers();
-    const userRole = session.user.role;
+    const userRole = (session.user as any)?.role;
 
     // worker は自分の取引のみ、manager/admin は全取引
     let filteredTransactions = transactions;
     if (userRole === 'worker') {
-      filteredTransactions = transactions.filter(tx => tx.user_id === session.user.id);
+      filteredTransactions = transactions.filter(tx => tx.workerId === (session.user as any).id);
     }
 
     // ユーザー情報を関連付け
     const transactionsView: TransactionView[] = filteredTransactions.map((tx) => {
-      const user = users.find(u => u.id === tx.user_id);
       return {
         ...tx,
-        user_name: user?.name || '不明',
-      };
+      } as TransactionView;
     });
 
     return NextResponse.json({

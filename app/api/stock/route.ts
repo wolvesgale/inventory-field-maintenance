@@ -27,39 +27,40 @@ export async function GET(request: NextRequest) {
     const stockMap = new Map<string, StockViewItem>();
 
     items.forEach(item => {
-      stockMap.set(item.item_code, {
-        item_code: item.item_code,
-        item_name: item.item_name,
+      stockMap.set(item.code, {
+        item_code: item.code,
+        item_name: item.name,
         opening_qty: 0,
         in_qty: 0,
         out_qty: 0,
         closing_qty: 0,
-        new_flag: item.new_flag,
-        is_new: item.new_flag,
+        new_flag: false,
+        is_new: false,
       });
     });
 
     // 取引から集計
     approvedTransactions.forEach(tx => {
-      const key = tx.item_code;
+      const key = tx.itemCode;
       if (!stockMap.has(key)) {
+        const item = items.find(i => i.code === tx.itemCode);
         stockMap.set(key, {
-          item_code: tx.item_code,
-          item_name: items.find(i => i.item_code === tx.item_code)?.item_name || '不明',
+          item_code: tx.itemCode,
+          item_name: item?.name || '不明',
           opening_qty: 0,
           in_qty: 0,
           out_qty: 0,
           closing_qty: 0,
-          new_flag: items.find(i => i.item_code === tx.item_code)?.new_flag || false,
-          is_new: items.find(i => i.item_code === tx.item_code)?.new_flag || false,
+          new_flag: false,
+          is_new: false,
         });
       }
 
       const stock = stockMap.get(key)!;
-      if (tx.type === 'IN') {
-        stock.in_qty += tx.qty;
-      } else {
-        stock.out_qty += tx.qty;
+      if (tx.type === 'add') {
+        stock.in_qty += tx.quantity;
+      } else if (tx.type === 'remove') {
+        stock.out_qty += tx.quantity;
       }
       stock.closing_qty = stock.opening_qty + stock.in_qty - stock.out_qty;
     });

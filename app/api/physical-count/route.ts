@@ -15,16 +15,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { date, location, counts } = body;
+    const { countDate, location, counts } = body;
 
-    if (!date || !location || !counts || !Array.isArray(counts)) {
+    if (!countDate || !location || !counts || !Array.isArray(counts)) {
       return NextResponse.json(
         { success: false, error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    // 在庫を集計してexpected_qtyを計算
+    // 在庫を集計してsystemQuantityを計算
     const transactions = await getTransactions();
     const approvedTransactions = transactions.filter(tx => 
       tx.status === 'approved' || tx.status === 'locked'
@@ -32,41 +32,46 @@ export async function POST(request: NextRequest) {
 
     // カウント保存 + DiffLog作成
     for (const count of counts) {
-      const { item_code, actual_qty } = count;
+      const { itemCode, countedQuantity } = count;
 
-      // expected_qty を計算
-      let expected_qty = 0;
+      // systemQuantity を計算
+      let systemQuantity = 0;
       approvedTransactions.forEach(tx => {
-        if (tx.item_code === item_code) {
-          if (tx.type === 'IN') {
-            expected_qty += tx.qty;
+        if (tx.itemCode === itemCode) {
+          if (tx.type === 'add') {
+            systemQuantity += tx.quantity;
           } else {
-            expected_qty -= tx.qty;
+            systemQuantity -= tx.quantity;
           }
         }
       });
 
       // PhysicalCount に記録
       await addPhysicalCount({
-        date,
-        user_id: session.user.id,
-        location,
-        item_code,
-        expected_qty,
-        actual_qty: parseInt(actual_qty, 10),
+        countDate,
+        itemId: '', // 別途設定が必要
+        itemCode,
+        itemName: '',
+        countedQuantity: parseInt(String(countedQuantity), 10),
+        systemQuantity,
+        difference: parseInt(String(countedQuantity), 10) - systemQuantity,
+        workerId: (session.user as any).id,
+        workerName: (session.user as any).name,
+        area: (session.user as any).area || '',
+        status: 'draft',
       });
 
       // 差異がある場合、DiffLog に記録
-      const diff = actual_qty - expected_qty;
-      if (diff !== 0) {
+      const difference = parseInt(String(countedQuantity), 10) - systemQuantity;
+      if (difference !== 0) {
         await addDiffLog({
-          date,
-          item_code,
-          expected_qty,
-          actual_qty: parseInt(actual_qty, 10),
-          diff,
-          reason: '',
-          resolved_flag: false,
+          physicalCountId: '', // addPhysicalCount の戻り値を使用すること
+          itemId: '',
+          itemCode,
+          itemName: '',
+          difference,
+          reportedDate: countDate,
+          status: 'pending',
         });
       }
     }

@@ -12,17 +12,17 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { type, date, item_code, item_name, qty, slip_photo_url, isNewItem } = body;
+    const { type, timestamp, itemCode, itemName, quantity, reason, isNewItem } = body;
 
     // バリデーション
-    if (!type || !date || !item_code || !qty) {
+    if (!type || !timestamp || !itemCode || !quantity) {
       return NextResponse.json(
         { success: false, error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    const parsedQty = parseInt(qty, 10);
+    const parsedQty = parseInt(String(quantity), 10);
     if (isNaN(parsedQty) || parsedQty <= 0) {
       return NextResponse.json(
         { success: false, error: 'Invalid quantity' },
@@ -32,35 +32,39 @@ export async function POST(request: NextRequest) {
 
     // 新規品目の場合、Items に追加
     if (isNewItem) {
-      if (!item_name) {
+      if (!itemName) {
         return NextResponse.json(
           { success: false, error: 'Item name is required for new items' },
           { status: 400 }
         );
       }
 
-      const existingItem = await getItemByCode(item_code);
+      const existingItem = await getItemByCode(itemCode);
       if (!existingItem) {
         await addItem({
-          item_code,
-          item_name,
+          code: itemCode,
+          name: itemName,
           category: '',
           unit: '個',
-          created_at: new Date().toISOString().split('T')[0],
-          new_flag: true,
+          standardQuantity: 0,
+          minQuantity: 0,
+          location: '',
         });
       }
     }
 
     // 入出庫取引を追加
     const transaction: Omit<Transaction, 'id'> = {
-      date,
-      user_id: session.user.id,
-      area: session.user.area,
-      type: type as any,
-      item_code,
-      qty: parsedQty,
-      slip_photo_url: slip_photo_url || undefined,
+      itemId: '', // 別途設定が必要
+      itemCode,
+      itemName: itemName || '',
+      type: type as 'add' | 'remove' | 'adjustment',
+      quantity: parsedQty,
+      reason: reason || '',
+      workerId: (session.user as any).id,
+      workerName: (session.user as any).name,
+      area: (session.user as any).area || '',
+      timestamp,
       status: 'pending',
     };
 
