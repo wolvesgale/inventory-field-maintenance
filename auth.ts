@@ -12,7 +12,7 @@ export const authOptions: NextAuthOptions = {
         loginId: { label: "ログインID", type: "text" },
         password: { label: "パスワード", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         console.log("[authorize] called with:", credentials);
 
         if (!credentials?.loginId) {
@@ -22,9 +22,13 @@ export const authOptions: NextAuthOptions = {
 
         const user = {
           id: credentials.loginId,
+          login_id: credentials.loginId,
+          area: "DEBUG",
           name: "Debug User",
+          email: null,
+          image: null,
           role: "MANAGER",
-        } as const;
+        } as any;
 
         console.log("[authorize] returning user:", user);
         return user;
