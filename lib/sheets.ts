@@ -73,23 +73,33 @@ export type SupplierReport = {
 };
 
 function getSheetsClient() {
-  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
-  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
+  const privateKeyRaw = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  const spreadsheetId =
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim() ||
+    process.env.GOOGLE_SPREADSHEET_ID?.trim();
 
-  if (!clientEmail || !privateKey || !spreadsheetId) {
+  if (!process.env.GOOGLE_SHEETS_SPREADSHEET_ID && process.env.GOOGLE_SPREADSHEET_ID) {
+    console.warn(
+      '[DEBUG sheets] GOOGLE_SPREADSHEET_ID is set. Please rename it to GOOGLE_SHEETS_SPREADSHEET_ID so it matches the code.'
+    );
+  }
+
+  if (!clientEmail || !privateKeyRaw || !spreadsheetId) {
     console.error('[DEBUG sheets] Missing environment variables:', {
       hasEmail: !!clientEmail,
-      hasKey: !!privateKey,
+      hasKey: !!privateKeyRaw,
       hasSpreadsheetId: !!spreadsheetId,
       envKeys: Object.keys(process.env).filter(k => k.includes('GOOGLE') || k.includes('SHEETS')),
     });
-    throw new Error("Google Sheets の環境変数が不足しています。.env.local に以下を設定してください: GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, GOOGLE_SHEETS_SPREADSHEET_ID");
+    throw new Error(
+      "Google Sheets の環境変数が不足しています。.env.local に以下を設定してください: GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, GOOGLE_SHEETS_SPREADSHEET_ID"
+    );
   }
 
   const auth = new google.auth.JWT({
     email: clientEmail,
-    key: privateKey.replace(/\\n/g, "\n"),
+    key: privateKeyRaw.replace(/\\n/g, "\n"),
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
 
