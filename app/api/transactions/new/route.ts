@@ -12,7 +12,30 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { type, date, item_code, item_name, qty, reason, is_new_item } = body;
+    const {
+      type,
+      date,
+      item_code,
+      item_name,
+      qty,
+      reason,
+      is_new_item,
+      isNewItem,
+    } = body;
+
+    const normalizeBoolean = (value: unknown): boolean => {
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'number') return value !== 0;
+      if (typeof value === 'string') {
+        const lowered = value.toLowerCase();
+        return lowered === 'true' || lowered === '1';
+      }
+      return false;
+    };
+
+    const isNewItemFlag = normalizeBoolean(
+      typeof is_new_item !== 'undefined' ? is_new_item : isNewItem
+    );
 
     // バリデーション
     if (!type || !date || !item_code || (qty === undefined || qty === null)) {
@@ -31,7 +54,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 新規品目の場合、Items に追加
-    if (is_new_item) {
+    if (isNewItemFlag) {
       if (!item_name) {
         return NextResponse.json(
           { success: false, error: 'Item name is required for new items' },
