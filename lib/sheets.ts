@@ -158,8 +158,11 @@ export async function getUserByLoginId(login_id: string): Promise<AppUser | null
     throw new Error("Users シートのヘッダが想定と異なります");
   }
 
-  const row = dataRows.find((r) => r[idxLoginId] === login_id);
-  console.log('[DEBUG sheets] Looking for login_id:', login_id);
+  const normalizedLoginId = login_id.trim();
+  const row = dataRows.find(
+    (r) => String(r[idxLoginId]).trim() === normalizedLoginId
+  );
+  console.log('[DEBUG sheets] Looking for login_id:', normalizedLoginId);
   console.log('[DEBUG sheets] Found row:', row ? { ...row } : null);
 
   if (!row) {

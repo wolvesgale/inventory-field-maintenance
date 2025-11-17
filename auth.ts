@@ -4,6 +4,15 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { getUserByLoginId } from "@/lib/sheets";
 
+type AuthenticatedUser = {
+  id: string;
+  loginId: string;
+  login_id: string;
+  name?: string | null;
+  role?: string;
+  area?: string;
+};
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -12,26 +21,34 @@ export const authOptions: NextAuthOptions = {
         loginId: { label: "ログインID", type: "text" },
         password: { label: "パスワード", type: "password" },
       },
-      async authorize(credentials, req) {
-        console.log("[authorize] called with:", credentials);
-
-        if (!credentials?.loginId) {
-          console.log("[authorize] no loginId");
-          return null;
+      async authorize(credentials) {
+        if (!credentials?.loginId || !credentials?.password) {
+          throw new Error("ログインIDとパスワードを入力してください。");
         }
 
-        const user = {
-          id: credentials.loginId,
-          login_id: credentials.loginId,
-          area: "DEBUG",
-          name: "Debug User",
-          email: null,
-          image: null,
-          role: "MANAGER",
-        } as any;
+        const loginId = credentials.loginId.trim();
+        const user = await getUserByLoginId(loginId);
 
-        console.log("[authorize] returning user:", user);
-        return user;
+        if (!user || user.active !== true) {
+          throw new Error("ログインIDまたはパスワードが違います。");
+        }
+
+        const ok = await bcrypt.compare(credentials.password, user.password_hash);
+
+        if (!ok) {
+          throw new Error("ログインIDまたはパスワードが違います。");
+        }
+
+        const authenticatedUser: AuthenticatedUser = {
+          id: String(user.id),
+          loginId: user.login_id,
+          login_id: user.login_id,
+          name: user.name,
+          role: user.role,
+          area: user.area,
+        };
+
+        return authenticatedUser;
       },
     }),
   ],
@@ -44,15 +61,21 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        (token as any).role = (user as any).role ?? "worker";
-        (token as any).area = (user as any).area ?? "";
+        const authUser = user as AuthenticatedUser;
+        token.loginId = authUser.loginId;
+        token.role = authUser.role;
+        token.area = authUser.area;
+        token.name = authUser.name ?? token.name;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).role = (token as any).role;
-        (session.user as any).area = (token as any).area;
+        const userExtensions: Record<string, unknown> = session.user;
+        userExtensions.loginId = token.loginId;
+        userExtensions.role = token.role;
+        userExtensions.area = token.area;
+        session.user.name = (token.name as string | null | undefined) ?? session.user.name;
       }
       return session;
     },
