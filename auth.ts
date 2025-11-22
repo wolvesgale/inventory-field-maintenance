@@ -8,9 +8,9 @@ type UserRole = "worker" | "manager";
 
 type AuthenticatedUser = {
   id: string;
+  name: string;
   loginId: string;
   login_id: string;
-  name?: string | null;
   role: UserRole;
   area?: string;
 };
@@ -46,9 +46,9 @@ export const authOptions: NextAuthOptions = {
 
         const authenticatedUser: AuthenticatedUser = {
           id: String(user.id),
+          name: user.name || "",
           loginId: user.login_id,
           login_id: user.login_id,
-          name: user.name,
           role,
           area: user.area,
         };
@@ -70,7 +70,7 @@ export const authOptions: NextAuthOptions = {
         token.loginId = authUser.loginId || authUser.login_id;
         token.role = authUser.role;
         token.area = authUser.area;
-        token.name = authUser.name ?? token.name;
+        token.name = authUser.name;
       }
       return token;
     },
@@ -80,7 +80,7 @@ export const authOptions: NextAuthOptions = {
         userExtensions.loginId = token.loginId ?? userExtensions.loginId;
         userExtensions.role = token.role;
         userExtensions.area = token.area;
-        session.user.name = (token.name as string | null | undefined) ?? session.user.name;
+        session.user.name = typeof token.name === "string" ? token.name : session.user.name;
       }
       return session;
     },
