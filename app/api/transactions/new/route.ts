@@ -52,6 +52,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const area = session.user.area;
+    if (!area) {
+      return NextResponse.json(
+        { success: false, error: 'ユーザーに紐づくエリア情報がありません。管理者に連絡してください。' },
+        { status: 400 }
+      );
+    }
+
     const body = (await request.json()) as TransactionRequestBody;
 
     if (
@@ -103,7 +111,7 @@ export async function POST(request: NextRequest) {
       reason: buildReason(body.transactionType, base, location, memo),
       user_id: session.user.id,
       user_name: session.user.name,
-      area: session.user.area,
+      area,
       date,
       status: 'pending',
     };
