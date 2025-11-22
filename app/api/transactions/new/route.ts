@@ -1,81 +1,128 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/auth';
-import { addTransaction, addItem, getItemByCode } from '@/lib/sheets';
+import { addTransaction } from '@/lib/sheets';
 import { Transaction } from '@/types';
+
+type TransactionCategory = '棚卸' | '入庫' | '出庫';
+
+interface TransactionRequestBody {
+  date?: unknown;
+  base?: unknown;
+  location?: unknown;
+  itemName?: unknown;
+  quantity?: unknown;
+  transactionType?: unknown;
+  memo?: unknown;
+}
+
+const isTransactionCategory = (value: unknown): value is TransactionCategory => {
+  return value === '棚卸' || value === '入庫' || value === '出庫';
+};
+
+const buildItemCode = (base: string, location: string): string => {
+  const trimmedBase = base.trim();
+  const trimmedLocation = location.trim();
+  if (trimmedBase && trimmedLocation) {
+    return `${trimmedBase} / ${trimmedLocation}`;
+  }
+  return trimmedBase || trimmedLocation || 'N/A';
+};
+
+const buildReason = (
+  transactionType: TransactionCategory,
+  base: string,
+  location: string,
+  memo?: string
+): string => {
+  const details = [`種別: ${transactionType}`, `拠点: ${base}`];
+  if (location) {
+    details.push(`棚: ${location}`);
+  }
+  if (memo) {
+    details.push(`メモ: ${memo}`);
+  }
+  return details.join(' | ');
+};
 
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!session || !session.user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { type, date, item_code, item_name, qty, reason, is_new_item } = body;
-
-    // バリデーション
-    if (!type || !date || !item_code || (qty === undefined || qty === null)) {
+    const area = session.user.area;
+    if (!area) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
+        { success: false, error: 'ユーザーに紐づくエリア情報がありません。管理者に連絡してください。' },
         { status: 400 }
       );
     }
 
-    const parsedQty = parseInt(String(qty), 10);
-    if (isNaN(parsedQty) || parsedQty <= 0) {
+    const body = (await request.json()) as TransactionRequestBody;
+
+    if (
+      typeof body.date !== 'string' ||
+      typeof body.base !== 'string' ||
+      typeof body.location !== 'string' ||
+      typeof body.itemName !== 'string'
+    ) {
       return NextResponse.json(
-        { success: false, error: 'Invalid quantity' },
+        { success: false, error: '必須項目が不足しています' },
         { status: 400 }
       );
     }
 
-    // 新規品目の場合、Items に追加
-    if (is_new_item) {
-      if (!item_name) {
-        return NextResponse.json(
-          { success: false, error: 'Item name is required for new items' },
-          { status: 400 }
-        );
-      }
-
-      const existingItem = await getItemByCode(item_code);
-      if (!existingItem) {
-        await addItem({
-          item_code: item_code,
-          item_name: item_name,
-          category: '',
-          unit: '個',
-          created_at: new Date().toISOString(),
-          new_flag: true,
-        });
-      }
+    if (!isTransactionCategory(body.transactionType)) {
+      return NextResponse.json(
+        { success: false, error: '取引種別が不正です' },
+        { status: 400 }
+      );
     }
 
-    // 入出庫取引を追加
-    const transaction: Omit<Transaction, 'id'> = {
-      item_code: item_code,
-      item_name: item_name || '',
-      type: type as 'IN' | 'OUT',
-      qty: parsedQty,
-      reason: reason || '',
-      user_id: (session.user as any).id,
-      user_name: (session.user as any).name,
-      area: (session.user as any).area || '',
+    const memo = typeof body.memo === 'string' ? body.memo.trim() : undefined;
+
+    const quantityValue = Number(body.quantity);
+    if (!Number.isFinite(quantityValue) || quantityValue === 0) {
+      return NextResponse.json(
+        { success: false, error: '数量は0以外の数値を入力してください' },
+        { status: 400 }
+      );
+    }
+
+    const date = body.date.trim();
+    const base = body.base.trim();
+    const location = body.location.trim();
+    const itemName = body.itemName.trim();
+
+    if (!date || !base || !location || !itemName) {
+      return NextResponse.json(
+        { success: false, error: '必須項目が不足しています' },
+        { status: 400 }
+      );
+    }
+
+    const transactionRecord: Omit<Transaction, 'id'> = {
+      item_code: buildItemCode(base, location),
+      item_name: itemName,
+      type: body.transactionType === '出庫' ? 'OUT' : 'IN',
+      qty: quantityValue,
+      reason: buildReason(body.transactionType, base, location, memo),
+      user_id: session.user.id,
+      user_name: session.user.name,
+      area,
       date,
       status: 'pending',
     };
 
-    await addTransaction(transaction);
+    await addTransaction(transactionRecord);
 
-    return NextResponse.json({
-      success: true,
-      message: '取引を登録しました',
-    });
+    return NextResponse.json({ success: true, message: '取引を登録しました' });
   } catch (error) {
     console.error('Failed to create transaction:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to create transaction' },
+      { success: false, error: '登録処理でエラーが発生しました' },
       { status: 500 }
     );
   }
