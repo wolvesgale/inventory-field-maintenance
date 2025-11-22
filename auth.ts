@@ -4,12 +4,14 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { getUserByLoginId } from "@/lib/sheets";
 
+type UserRole = "worker" | "manager";
+
 type AuthenticatedUser = {
   id: string;
   loginId: string;
   login_id: string;
   name?: string | null;
-  role?: string;
+  role: UserRole;
   area?: string;
 };
 
@@ -39,12 +41,15 @@ export const authOptions: NextAuthOptions = {
           throw new Error("ログインIDまたはパスワードが違います。");
         }
 
+        const rawRole = (user.role ?? "").trim().toLowerCase();
+        const role: UserRole = rawRole === "manager" ? "manager" : "worker";
+
         const authenticatedUser: AuthenticatedUser = {
           id: String(user.id),
           loginId: user.login_id,
           login_id: user.login_id,
           name: user.name,
-          role: user.role,
+          role,
           area: user.area,
         };
 
@@ -62,7 +67,7 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         const authUser = user as AuthenticatedUser;
-        token.loginId = authUser.loginId;
+        token.loginId = authUser.loginId || authUser.login_id;
         token.role = authUser.role;
         token.area = authUser.area;
         token.name = authUser.name ?? token.name;
@@ -72,7 +77,7 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (session.user) {
         const userExtensions: Record<string, unknown> = session.user;
-        userExtensions.loginId = token.loginId;
+        userExtensions.loginId = token.loginId ?? userExtensions.loginId;
         userExtensions.role = token.role;
         userExtensions.area = token.area;
         session.user.name = (token.name as string | null | undefined) ?? session.user.name;
