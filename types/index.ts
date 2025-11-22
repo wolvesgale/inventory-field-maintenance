@@ -14,7 +14,7 @@ export interface User {
   password_hash: string;
   role: UserRole;
   name: string;
-  area: string;
+  area?: string;
   active: boolean;
 }
 
@@ -23,7 +23,7 @@ export interface UserSession {
   login_id: string;
   role: UserRole;
   name: string;
-  area: string;
+  area?: string;
 }
 
 // NextAuth.js のセッション拡張
@@ -36,7 +36,7 @@ declare module 'next-auth' {
     login_id: string;
     role: UserRole;
     name: string;
-    area: string;
+    area?: string;
   }
 }
 

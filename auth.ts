@@ -1,19 +1,12 @@
 // auth.ts
-import type { NextAuthOptions } from "next-auth";
+import type { NextAuthOptions, User } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { getUserByLoginId } from "@/lib/sheets";
 
 type UserRole = "worker" | "manager";
 
-type AuthenticatedUser = {
-  id: string;
-  name: string;
-  loginId: string;
-  login_id: string;
-  role: UserRole;
-  area?: string;
-};
+type AuthenticatedUser = User;
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -23,7 +16,7 @@ export const authOptions: NextAuthOptions = {
         loginId: { label: "ログインID", type: "text" },
         password: { label: "パスワード", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials): Promise<User | null> {
         if (!credentials?.loginId || !credentials?.password) {
           throw new Error("ログインIDとパスワードを入力してください。");
         }
@@ -44,13 +37,12 @@ export const authOptions: NextAuthOptions = {
         const rawRole = (user.role ?? "").trim().toLowerCase();
         const role: UserRole = rawRole === "manager" ? "manager" : "worker";
 
-        const authenticatedUser: AuthenticatedUser = {
+        const authenticatedUser: User = {
           id: String(user.id),
           name: user.name || "",
-          loginId: user.login_id,
           login_id: user.login_id,
           role,
-          area: user.area,
+          area: user.area ?? undefined,
         };
 
         return authenticatedUser;
@@ -67,7 +59,7 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         const authUser = user as AuthenticatedUser;
-        token.loginId = authUser.loginId || authUser.login_id;
+        token.login_id = authUser.login_id;
         token.role = authUser.role;
         token.area = authUser.area;
         token.name = authUser.name;
@@ -77,9 +69,10 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (session.user) {
         const userExtensions: Record<string, unknown> = session.user;
-        userExtensions.loginId = token.loginId ?? userExtensions.loginId;
-        userExtensions.role = token.role;
-        userExtensions.area = token.area;
+        userExtensions.loginId = (token.login_id as string | undefined) ?? userExtensions.loginId;
+        session.user.login_id = (token.login_id as string | undefined) ?? session.user.login_id;
+        session.user.role = (token.role as UserRole | undefined) ?? session.user.role;
+        session.user.area = (token.area as string | undefined) ?? session.user.area;
         session.user.name = typeof token.name === "string" ? token.name : session.user.name;
       }
       return session;
