@@ -237,7 +237,7 @@ export default function NewTransactionPage() {
                 type="date"
                 value={form.date}
                 onChange={(event) => handleFieldChange('date')(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
                 disabled={isFormDisabled}
               />
@@ -251,7 +251,7 @@ export default function NewTransactionPage() {
                 id="base"
                 value={form.base}
                 onChange={(event) => handleFieldChange('base')(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 disabled={isFormDisabled}
               >
                 {WAREHOUSE_OPTIONS.map((option) => (
@@ -272,7 +272,7 @@ export default function NewTransactionPage() {
                 value={form.location}
                 onChange={(event) => handleFieldChange('location')(event.target.value)}
                 placeholder="例：A-01-03"
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
                 disabled={isFormDisabled}
               />
@@ -287,17 +287,17 @@ export default function NewTransactionPage() {
                   id="itemName"
                   type="text"
                   value={itemSearch}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setItemSearch(value);
-                    setForm((prev) => ({ ...prev, itemName: value, itemCode: '' }));
-                  }}
-                  placeholder="品目名または品目コードで検索"
-                  className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                  disabled={isFormDisabled}
-                  onFocus={() => setShowItemDropdown(itemCandidates.length > 0)}
-                />
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setItemSearch(value);
+                  setForm((prev) => ({ ...prev, itemName: value, itemCode: '' }));
+                }}
+                placeholder="品目名または品目コードで検索"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+                disabled={isFormDisabled}
+                onFocus={() => setShowItemDropdown(itemCandidates.length > 0)}
+              />
                 {showItemDropdown && itemCandidates.length > 0 && (
                   <ul className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white text-sm shadow">
                     {itemCandidates.map((item) => (
@@ -333,7 +333,7 @@ export default function NewTransactionPage() {
                 value={form.quantity}
                 onChange={(event) => handleFieldChange('quantity')(event.target.value)}
                 placeholder="例：10 または -3"
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 step="1"
                 disabled={isFormDisabled}
               />
@@ -347,7 +347,7 @@ export default function NewTransactionPage() {
                 id="transactionType"
                 value={form.transactionType}
                 onChange={(event) => handleFieldChange('transactionType')(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 disabled={isFormDisabled}
               >
                 {TRANSACTION_TYPES.map((option) => (
@@ -367,7 +367,7 @@ export default function NewTransactionPage() {
                 value={form.memo}
                 onChange={(event) => handleFieldChange('memo')(event.target.value)}
                 rows={4}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="特記事項があれば入力"
                 disabled={isFormDisabled}
               />

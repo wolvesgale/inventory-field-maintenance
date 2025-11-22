@@ -89,13 +89,13 @@ export default function StockPage() {
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
                   placeholder="品目コード・品目名で検索"
-                  className="w-full max-w-md rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full max-w-md rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-100 border-b">
+                <table className="min-w-full text-sm text-gray-900">
+                  <thead className="bg-gray-100 border-b text-gray-700">
                     <tr>
                       <th className="text-left px-6 py-3 font-medium">品目コード</th>
                       <th className="text-left px-6 py-3 font-medium">品目名</th>
@@ -105,7 +105,7 @@ export default function StockPage() {
                       <th className="text-center px-6 py-3 font-medium">期末</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-gray-100">
                     {filteredStocks.map((stock, idx) => (
                       <tr key={idx} className="border-b hover:bg-gray-50">
                         <td className="px-6 py-3 flex items-center gap-2">
