@@ -50,12 +50,11 @@ export default function StockPage() {
   const keyword = normalize(debouncedSearchTerm);
 
   const filteredStocks = keyword
-    ? stocks.filter((stock) =>
-        normalize(stock.item_code).includes(keyword) ||
-        normalize((stock as Record<string, unknown>).code).includes(keyword) ||
-        normalize(stock.item_name).includes(keyword) ||
-        normalize((stock as Record<string, unknown>).name).includes(keyword)
-      )
+    ? stocks.filter((stock) => {
+        const code = normalize(stock.item_code);
+        const name = normalize(stock.item_name);
+        return code.includes(keyword) || name.includes(keyword);
+      })
     : stocks;
 
   return (
