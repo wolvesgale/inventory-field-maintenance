@@ -11,11 +11,17 @@ const TRANSACTION_TYPES = ['棚卸', '入庫', '出庫'] as const;
 type WarehouseOption = (typeof WAREHOUSE_OPTIONS)[number];
 type TransactionTypeOption = (typeof TRANSACTION_TYPES)[number];
 
+type ItemCandidate = {
+  item_code: string;
+  item_name: string;
+};
+
 interface TransactionFormState {
   date: string;
   base: WarehouseOption;
   location: string;
   itemName: string;
+  itemCode: string;
   quantity: string;
   transactionType: TransactionTypeOption;
   memo: string;
@@ -26,6 +32,7 @@ interface TransactionRequestPayload {
   base: string;
   location: string;
   itemName: string;
+  itemCode?: string;
   quantity: number;
   transactionType: TransactionTypeOption;
   memo?: string;
@@ -36,6 +43,7 @@ const createInitialState = (): TransactionFormState => ({
   base: WAREHOUSE_OPTIONS[0],
   location: '',
   itemName: '',
+  itemCode: '',
   quantity: '',
   transactionType: TRANSACTION_TYPES[0],
   memo: '',
@@ -47,12 +55,64 @@ export default function NewTransactionPage() {
   const [form, setForm] = useState<TransactionFormState>(() => createInitialState());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [itemSearch, setItemSearch] = useState('');
+  const [debouncedItemSearch, setDebouncedItemSearch] = useState('');
+  const [itemCandidates, setItemCandidates] = useState<ItemCandidate[]>([]);
+  const [showItemDropdown, setShowItemDropdown] = useState(false);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login');
     }
   }, [router, status]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedItemSearch(itemSearch);
+    }, 300);
+
+    return () => clearTimeout(handle);
+  }, [itemSearch]);
+
+  useEffect(() => {
+    const keyword = debouncedItemSearch.trim();
+    if (!keyword) {
+      setItemCandidates([]);
+      setShowItemDropdown(false);
+      return;
+    }
+
+    const fetchItems = async () => {
+      const response = await fetch(`/api/items/search?q=${encodeURIComponent(keyword)}`);
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+      const candidates: unknown = data?.data ?? data?.items ?? data;
+      if (!Array.isArray(candidates)) {
+        setItemCandidates([]);
+        setShowItemDropdown(false);
+        return;
+      }
+
+      const mapped = candidates
+        .map((candidate) => ({
+          item_code: (candidate as ItemCandidate).item_code,
+          item_name: (candidate as ItemCandidate).item_name,
+        }))
+        .filter((candidate) => candidate.item_code && candidate.item_name);
+
+      setItemCandidates(mapped);
+      setShowItemDropdown(mapped.length > 0);
+    };
+
+    fetchItems().catch((error) => {
+      console.error('Failed to search items', error);
+      setItemCandidates([]);
+      setShowItemDropdown(false);
+    });
+  }, [debouncedItemSearch]);
 
   const isFormDisabled = useMemo(() => status !== 'authenticated', [status]);
 
@@ -111,6 +171,7 @@ export default function NewTransactionPage() {
       base: form.base,
       location: form.location.trim(),
       itemName: form.itemName.trim(),
+      itemCode: form.itemCode.trim() || undefined,
       quantity: quantityValue,
       transactionType: form.transactionType,
       memo: form.memo.trim() || undefined,
@@ -135,6 +196,9 @@ export default function NewTransactionPage() {
 
       window.alert('登録しました');
       setForm(createInitialState());
+      setItemSearch('');
+      setItemCandidates([]);
+      setShowItemDropdown(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : '登録に失敗しました';
       setSubmitError(message);
@@ -218,16 +282,45 @@ export default function NewTransactionPage() {
               <label htmlFor="itemName" className="mb-2 block text-sm font-medium text-gray-700">
                 品目名
               </label>
-              <input
-                id="itemName"
-                type="text"
-                value={form.itemName}
-                onChange={(event) => handleFieldChange('itemName')(event.target.value)}
-                placeholder="品目名を入力"
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-                disabled={isFormDisabled}
-              />
+              <div className="relative">
+                <input
+                  id="itemName"
+                  type="text"
+                  value={itemSearch}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setItemSearch(value);
+                    setForm((prev) => ({ ...prev, itemName: value, itemCode: '' }));
+                  }}
+                  placeholder="品目名または品目コードで検索"
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                  disabled={isFormDisabled}
+                  onFocus={() => setShowItemDropdown(itemCandidates.length > 0)}
+                />
+                {showItemDropdown && itemCandidates.length > 0 && (
+                  <ul className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white text-sm shadow">
+                    {itemCandidates.map((item) => (
+                      <li
+                        key={item.item_code}
+                        className="cursor-pointer px-3 py-2 hover:bg-blue-50"
+                        onClick={() => {
+                          setItemSearch(item.item_name);
+                          setShowItemDropdown(false);
+                          setForm((prev) => ({
+                            ...prev,
+                            itemName: item.item_name,
+                            itemCode: item.item_code,
+                          }));
+                        }}
+                      >
+                        <div className="font-medium">{item.item_name}</div>
+                        <div className="text-xs text-gray-500">{item.item_code}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
 
             <div>

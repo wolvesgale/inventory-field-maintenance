@@ -11,6 +11,7 @@ interface TransactionRequestBody {
   base?: unknown;
   location?: unknown;
   itemName?: unknown;
+  itemCode?: unknown;
   quantity?: unknown;
   transactionType?: unknown;
   memo?: unknown;
@@ -82,6 +83,10 @@ export async function POST(request: NextRequest) {
     }
 
     const memo = typeof body.memo === 'string' ? body.memo.trim() : undefined;
+    const itemCode =
+      typeof body.itemCode === 'string' && body.itemCode.trim()
+        ? body.itemCode.trim()
+        : undefined;
 
     const quantityValue = Number(body.quantity);
     if (!Number.isFinite(quantityValue) || quantityValue === 0) {
@@ -104,7 +109,7 @@ export async function POST(request: NextRequest) {
     }
 
     const transactionRecord: Omit<Transaction, 'id'> = {
-      item_code: buildItemCode(base, location),
+      item_code: itemCode ?? buildItemCode(base, location),
       item_name: itemName,
       type: body.transactionType === '出庫' ? 'OUT' : 'IN',
       qty: quantityValue,
