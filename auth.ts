@@ -71,8 +71,6 @@ export const authOptions: NextAuthOptions = {
         session.user.id = (token.sub as string | undefined) ?? session.user.id;
         session.user.name =
           (token.name as string | undefined) ?? session.user.name;
-        session.user.email =
-          (token.email as string | null | undefined) ?? session.user.email;
         session.user.login_id =
           (token.login_id as string | undefined) ?? session.user.login_id;
         session.user.role = (token.role as UserRole | undefined) ?? session.user.role;
