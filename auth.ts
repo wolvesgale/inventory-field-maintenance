@@ -68,12 +68,15 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (session.user) {
-        const userExtensions: Record<string, unknown> = session.user;
-        userExtensions.loginId = (token.login_id as string | undefined) ?? userExtensions.loginId;
-        session.user.login_id = (token.login_id as string | undefined) ?? session.user.login_id;
+        session.user.id = (token.sub as string | undefined) ?? session.user.id;
+        session.user.name =
+          (token.name as string | undefined) ?? session.user.name;
+        session.user.email =
+          (token.email as string | null | undefined) ?? session.user.email;
+        session.user.login_id =
+          (token.login_id as string | undefined) ?? session.user.login_id;
         session.user.role = (token.role as UserRole | undefined) ?? session.user.role;
         session.user.area = (token.area as string | undefined) ?? session.user.area;
-        session.user.name = typeof token.name === "string" ? token.name : session.user.name;
       }
       return session;
     },
