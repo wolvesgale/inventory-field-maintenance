@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -50,6 +50,14 @@ const createInitialState = (): TransactionFormState => ({
 });
 
 export default function NewTransactionPage() {
+  return (
+    <Suspense fallback={<div className="p-4 text-sm text-gray-600">フォームを読み込み中です…</div>}>
+      <NewTransactionForm />
+    </Suspense>
+  );
+}
+
+function NewTransactionForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { status } = useSession();
@@ -296,17 +304,17 @@ export default function NewTransactionPage() {
                   id="itemName"
                   type="text"
                   value={itemSearch}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setItemSearch(value);
-                  setForm((prev) => ({ ...prev, itemName: value, itemCode: '' }));
-                }}
-                placeholder="品目名または品目コードで検索"
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-                disabled={isFormDisabled}
-                onFocus={() => setShowItemDropdown(itemCandidates.length > 0)}
-              />
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setItemSearch(value);
+                    setForm((prev) => ({ ...prev, itemName: value, itemCode: '' }));
+                  }}
+                  placeholder="品目名または品目コードで検索"
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                  disabled={isFormDisabled}
+                  onFocus={() => setShowItemDropdown(itemCandidates.length > 0)}
+                />
                 {showItemDropdown && itemCandidates.length > 0 && (
                   <ul className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white text-sm shadow">
                     {itemCandidates.map((item) => (
