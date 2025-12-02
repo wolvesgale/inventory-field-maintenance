@@ -73,9 +73,9 @@ export default function StockPage() {
       <Navigation />
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        <div className="bg-white rounded-lg shadow">
+        <div className="bg-white rounded-lg shadow text-gray-900">
           <div className="px-6 py-4 border-b">
-            <h1 className="text-2xl font-bold">在庫台帳</h1>
+            <h1 className="text-2xl font-bold text-gray-900">在庫台帳</h1>
           </div>
 
           {error && (

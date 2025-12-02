@@ -262,7 +262,7 @@ function NewTransactionForm() {
                 type="date"
                 value={form.date}
                 onChange={(event) => handleFieldChange('date')(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 required
                 disabled={isFormDisabled}
               />
@@ -276,7 +276,7 @@ function NewTransactionForm() {
                 id="base"
                 value={form.base}
                 onChange={(event) => handleFieldChange('base')(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 disabled={isFormDisabled}
               >
                 {WAREHOUSE_OPTIONS.map((option) => (
@@ -310,7 +310,7 @@ function NewTransactionForm() {
                     setForm((prev) => ({ ...prev, itemName: value, itemCode: '' }));
                   }}
                   placeholder="品目名または品目コードで検索"
-                  className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   required
                   disabled={isFormDisabled}
                   onFocus={() => setShowItemDropdown(itemCandidates.length > 0)}
@@ -350,7 +350,7 @@ function NewTransactionForm() {
                 value={form.quantity}
                 onChange={(event) => handleFieldChange('quantity')(event.target.value)}
                 placeholder="例：10 または -3"
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 step="1"
                 disabled={isFormDisabled}
               />
@@ -364,7 +364,7 @@ function NewTransactionForm() {
                 id="transactionType"
                 value={form.transactionType}
                 onChange={(event) => handleFieldChange('transactionType')(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 disabled={isFormDisabled}
               >
                 {TRANSACTION_TYPES.map((option) => (
@@ -384,7 +384,7 @@ function NewTransactionForm() {
                 value={form.memo}
                 onChange={(event) => handleFieldChange('memo')(event.target.value)}
                 rows={4}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 placeholder="特記事項があれば入力"
                 disabled={isFormDisabled}
               />
