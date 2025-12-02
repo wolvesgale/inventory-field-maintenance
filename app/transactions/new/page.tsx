@@ -291,7 +291,7 @@ function NewTransactionForm() {
             <input
               type="hidden"
               name="location"
-              value={form.location}
+              value={form.location ?? ''}
               onChange={(event) => handleFieldChange('location')(event.target.value)}
             />
 
