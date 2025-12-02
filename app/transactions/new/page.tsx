@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 
 const WAREHOUSE_OPTIONS = ['本社倉庫', '東日本センター', '西日本センター'] as const;
@@ -51,6 +51,7 @@ const createInitialState = (): TransactionFormState => ({
 
 export default function NewTransactionPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { status } = useSession();
   const [form, setForm] = useState<TransactionFormState>(() => createInitialState());
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,6 +60,7 @@ export default function NewTransactionPage() {
   const [debouncedItemSearch, setDebouncedItemSearch] = useState('');
   const [itemCandidates, setItemCandidates] = useState<ItemCandidate[]>([]);
   const [showItemDropdown, setShowItemDropdown] = useState(false);
+  const [hasPrefilled, setHasPrefilled] = useState(false);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -141,17 +143,32 @@ export default function NewTransactionPage() {
     }));
   };
 
+  useEffect(() => {
+    if (hasPrefilled) return;
+
+    const prefillItemName = searchParams?.get('itemName') ?? '';
+    const prefillItemCode = searchParams?.get('itemCode') ?? '';
+    const prefillTypeParam = searchParams?.get('type') ?? '';
+
+    if (prefillItemName || prefillItemCode || prefillTypeParam) {
+      setForm((prev) => ({
+        ...prev,
+        itemName: prefillItemName || prev.itemName,
+        itemCode: prefillItemCode || prev.itemCode,
+        transactionType: prefillTypeParam.toUpperCase() === 'USE' ? '出庫' : prev.transactionType,
+      }));
+      setItemSearch(prefillItemName || prefillItemCode);
+    }
+
+    setHasPrefilled(true);
+  }, [hasPrefilled, searchParams]);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitError(null);
 
     if (!form.date) {
       setSubmitError('日付を選択してください');
-      return;
-    }
-
-    if (!form.location.trim()) {
-      setSubmitError('棚/ロケーションを入力してください');
       return;
     }
 
@@ -262,21 +279,13 @@ export default function NewTransactionPage() {
               </select>
             </div>
 
-            <div>
-              <label htmlFor="location" className="mb-2 block text-sm font-medium text-gray-700">
-                棚/ロケーション
-              </label>
-              <input
-                id="location"
-                type="text"
-                value={form.location}
-                onChange={(event) => handleFieldChange('location')(event.target.value)}
-                placeholder="例：A-01-03"
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-                disabled={isFormDisabled}
-              />
-            </div>
+            {/* 棚/ロケーション（現状未使用のため非表示） */}
+            <input
+              type="hidden"
+              name="location"
+              value={form.location}
+              onChange={(event) => handleFieldChange('location')(event.target.value)}
+            />
 
             <div>
               <label htmlFor="itemName" className="mb-2 block text-sm font-medium text-gray-700">
@@ -303,7 +312,7 @@ export default function NewTransactionPage() {
                     {itemCandidates.map((item) => (
                       <li
                         key={item.item_code}
-                        className="cursor-pointer px-3 py-2 hover:bg-blue-50"
+                        className="cursor-pointer px-3 py-2 text-gray-900 hover:bg-blue-50"
                         onClick={() => {
                           setItemSearch(item.item_name);
                           setShowItemDropdown(false);
@@ -314,8 +323,8 @@ export default function NewTransactionPage() {
                           }));
                         }}
                       >
-                        <div className="font-medium">{item.item_name}</div>
-                        <div className="text-xs text-gray-500">{item.item_code}</div>
+                        <div className="font-medium text-gray-900">{item.item_name}</div>
+                        <div className="text-xs text-gray-600">{item.item_code}</div>
                       </li>
                     ))}
                   </ul>

@@ -63,17 +63,12 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json()) as TransactionRequestBody;
 
-    if (
-      typeof body.date !== 'string' ||
-      typeof body.base !== 'string' ||
-      typeof body.location !== 'string' ||
-      typeof body.itemName !== 'string'
-    ) {
-      return NextResponse.json(
-        { success: false, error: '必須項目が不足しています' },
-        { status: 400 }
-      );
-    }
+  if (typeof body.date !== 'string' || typeof body.base !== 'string' || typeof body.itemName !== 'string') {
+    return NextResponse.json(
+      { success: false, error: '必須項目が不足しています' },
+      { status: 400 }
+    );
+  }
 
     if (!isTransactionCategory(body.transactionType)) {
       return NextResponse.json(
@@ -82,11 +77,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const memo = typeof body.memo === 'string' ? body.memo.trim() : undefined;
-    const itemCode =
-      typeof body.itemCode === 'string' && body.itemCode.trim()
-        ? body.itemCode.trim()
-        : undefined;
+  const memo = typeof body.memo === 'string' ? body.memo.trim() : undefined;
+  const itemCode =
+    typeof body.itemCode === 'string' && body.itemCode.trim()
+      ? body.itemCode.trim()
+      : undefined;
 
     const quantityValue = Number(body.quantity);
     if (!Number.isFinite(quantityValue) || quantityValue === 0) {
@@ -96,17 +91,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const date = body.date.trim();
-    const base = body.base.trim();
-    const location = body.location.trim();
-    const itemName = body.itemName.trim();
+  const date = body.date.trim();
+  const base = body.base.trim();
+  const location = typeof body.location === 'string' ? body.location.trim() : '';
+  const itemName = body.itemName.trim();
 
-    if (!date || !base || !location || !itemName) {
-      return NextResponse.json(
-        { success: false, error: '必須項目が不足しています' },
-        { status: 400 }
-      );
-    }
+  if (!date || !base || !itemName) {
+    return NextResponse.json(
+      { success: false, error: '必須項目が不足しています' },
+      { status: 400 }
+    );
+  }
 
     const transactionRecord: Omit<Transaction, 'id'> = {
       item_code: itemCode ?? buildItemCode(base, location),

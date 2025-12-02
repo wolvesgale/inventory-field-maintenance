@@ -5,16 +5,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Navigation } from '@/components/Navigation';
 import { NewItemBadge } from '@/components/StatusBadge';
 import { StockViewItem } from '@/types';
 
 export default function StockPage() {
+  const router = useRouter();
   const [stocks, setStocks] = useState<StockViewItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [initialFilter, setInitialFilter] = useState<string>('ALL');
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -47,15 +50,23 @@ export default function StockPage() {
   }, []);
 
   const normalize = (value: unknown) => (value ?? '').toString().toLowerCase();
+  const normalizeUpper = (value: unknown) => (value ?? '').toString().trim().toUpperCase();
+  const getInitial = (name: string) => normalizeUpper(name).slice(0, 2);
+
   const keyword = normalize(debouncedSearchTerm);
 
-  const filteredStocks = keyword
-    ? stocks.filter((stock) => {
-        const code = normalize(stock.item_code);
-        const name = normalize(stock.item_name);
-        return code.includes(keyword) || name.includes(keyword);
-      })
-    : stocks;
+  const filteredStocks = stocks.filter((stock) => {
+    if (initialFilter !== 'ALL') {
+      const initial = getInitial(stock.item_name ?? '');
+      if (initial !== initialFilter) return false;
+    }
+
+    if (!keyword) return true;
+
+    const code = normalize(stock.item_code);
+    const name = normalize(stock.item_name);
+    return code.includes(keyword) || name.includes(keyword);
+  });
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -79,18 +90,35 @@ export default function StockPage() {
             <div className="px-6 py-8 text-center text-gray-500">在庫情報がありません</div>
           ) : (
             <div className="px-6 pt-4">
-              <div className="mb-4">
-                <label htmlFor="stock-search" className="sr-only">
-                  品目コード・品目名で検索
-                </label>
-                <input
-                  id="stock-search"
-                  type="text"
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="品目コード・品目名で検索"
-                  className="w-full max-w-md rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                {['ALL', 'MA', 'RA', 'EG'].map((code) => (
+                  <button
+                    key={code}
+                    type="button"
+                    onClick={() => setInitialFilter(code)}
+                    className={`rounded px-3 py-1 text-xs font-medium border ${
+                      initialFilter === code
+                        ? 'border-blue-500 bg-blue-50 text-blue-600'
+                        : 'border-gray-300 bg-white text-gray-700'
+                    }`}
+                  >
+                    {code === 'ALL' ? 'すべて' : code}
+                  </button>
+                ))}
+
+                <div className="ml-auto w-full max-w-md">
+                  <label htmlFor="stock-search" className="sr-only">
+                    品目コード・品目名で検索
+                  </label>
+                  <input
+                    id="stock-search"
+                    type="text"
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    placeholder="品目コード・品目名で検索"
+                    className="w-full rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
               </div>
 
               <div className="overflow-x-auto">
@@ -103,6 +131,7 @@ export default function StockPage() {
                       <th className="text-center px-6 py-3 font-medium">入庫</th>
                       <th className="text-center px-6 py-3 font-medium">出庫</th>
                       <th className="text-center px-6 py-3 font-medium">期末</th>
+                      <th className="text-center px-6 py-3 font-medium">操作</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -122,6 +151,23 @@ export default function StockPage() {
                         </td>
                         <td className="text-center px-6 py-3 font-bold bg-blue-50">
                           {stock.closing_qty}
+                        </td>
+                        <td className="text-center px-6 py-3">
+                          <button
+                            type="button"
+                            disabled={(stock.closing_qty ?? 0) <= 0}
+                            onClick={() => {
+                              const params = new URLSearchParams({
+                                itemCode: String(stock.item_code ?? ''),
+                                itemName: String(stock.item_name ?? ''),
+                                type: 'USE',
+                              });
+                              router.push(`/transactions/new?${params.toString()}`);
+                            }}
+                            className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                          >
+                            使用申請
+                          </button>
                         </td>
                       </tr>
                     ))}
