@@ -4,6 +4,7 @@ import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { getItemGroup } from '@/lib/itemGroups';
 
 const WAREHOUSE_OPTIONS = ['箕面', '茨木', '八尾'] as const;
 const TRANSACTION_TYPE_OPTIONS = [
@@ -54,16 +55,6 @@ const createInitialState = (): TransactionFormState => ({
 
 const normalize = (value: unknown) => (value ?? '').toString();
 const toLower = (value: unknown) => normalize(value).toLowerCase();
-const normalizeInitialFromName = (name: string): string => {
-  const withoutBullet = normalize(name).trim().replace(/^■\s*/, '');
-  const [rawToken = ''] = withoutBullet.split(/[\s\u3000]+/);
-  const upper = rawToken.toUpperCase();
-
-  if (!upper) return '';
-  if (upper.startsWith('SAD')) return 'SAD';
-  return upper;
-};
-
 export default function NewTransactionPage() {
   return (
     <Suspense fallback={<div className="p-4 text-sm text-gray-600">フォームを読み込み中です…</div>}>
@@ -108,7 +99,7 @@ function NewTransactionForm() {
   }, [itemInitial]);
 
   useEffect(() => {
-    const keyword = debouncedItemSearch.trim();
+    const keyword = debouncedItemSearch.trim().toLowerCase();
     const initialInput = debouncedItemInitial.trim().toUpperCase();
 
     if (!keyword && !initialInput) {
@@ -142,11 +133,11 @@ function NewTransactionForm() {
       const filtered = mapped.filter((candidate) => {
         const nameLower = toLower(candidate.item_name);
         const codeLower = toLower(candidate.item_code);
-        const normalizedInitial = normalizeInitialFromName(candidate.item_name);
+        const normalizedInitial = getItemGroup(candidate.item_name);
 
-        const matchesKeyword = !keyword || nameLower.includes(keyword.toLowerCase()) || codeLower.includes(keyword.toLowerCase());
-        const matchesInitial =
-          !initialInput || normalizedInitial.startsWith(initialInput);
+        const matchesKeyword =
+          !keyword || nameLower.includes(keyword) || codeLower.includes(keyword);
+        const matchesInitial = !initialInput || normalizedInitial === initialInput;
 
         return matchesKeyword && matchesInitial;
       });
@@ -309,6 +300,14 @@ function NewTransactionForm() {
               </label>
               <div className="relative space-y-2">
                 <input
+                  type="text"
+                  value={itemInitial}
+                  onChange={(event) => setItemInitial(event.target.value)}
+                  placeholder="イニシャル (例: EG / MA / RA / SAD)"
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  disabled={isFormDisabled}
+                />
+                <input
                   id="itemName"
                   type="text"
                   value={itemSearch}
@@ -323,14 +322,6 @@ function NewTransactionForm() {
                   disabled={isFormDisabled}
                   onFocus={() => setShowItemDropdown(itemCandidates.length > 0)}
                 />
-                <input
-                  type="text"
-                  value={itemInitial}
-                  onChange={(event) => setItemInitial(event.target.value)}
-                  placeholder="イニシャル (例: EG / MA / RA / SAD)"
-                  className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  disabled={isFormDisabled}
-                />
                 {showItemDropdown && itemCandidates.length > 0 && (
                   <ul className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white text-sm shadow">
                     {itemCandidates.map((item) => (
@@ -339,7 +330,7 @@ function NewTransactionForm() {
                         className="cursor-pointer px-3 py-2 text-gray-900 hover:bg-blue-50"
                         onClick={() => {
                           setItemSearch(item.item_name);
-                          setItemInitial(normalizeInitialFromName(item.item_name));
+                          setItemInitial(getItemGroup(item.item_name));
                           setShowItemDropdown(false);
                           setForm((prev) => ({
                             ...prev,

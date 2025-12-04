@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import { Navigation } from '@/components/Navigation';
 import { NewItemBadge } from '@/components/StatusBadge';
 import { StockViewItem } from '@/types';
+import { GROUP_CODES, ItemGroup, getItemGroup } from '@/lib/itemGroups';
 
 export default function StockPage() {
   const router = useRouter();
@@ -17,7 +18,7 @@ export default function StockPage() {
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-  const [initialFilter, setInitialFilter] = useState<string>('ALL');
+  const [groupFilter, setGroupFilter] = useState<ItemGroup | 'ALL'>('ALL');
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -50,33 +51,18 @@ export default function StockPage() {
   }, []);
 
   const normalize = (value: unknown) => (value ?? '').toString().toLowerCase();
-  const normalizeInitialFromName = (name: string): string => {
-    const withoutBullet = (name ?? '').toString().trim().replace(/^■\s*/, '');
-    const [rawToken = ''] = withoutBullet.split(/[\s\u3000]+/);
-    const upper = rawToken.toUpperCase();
 
-    if (!upper) return 'その他';
-    if (upper.startsWith('SAD')) return 'SAD';
-    if (upper === 'その他') return 'その他';
-    if (!/^[A-Z]/.test(upper)) return 'その他';
-    return upper;
-  };
-
-  const initialOptions = useMemo(() => {
-    const initials = new Set<string>();
-    for (const stock of stocks) {
-      const token = normalizeInitialFromName(stock.item_name ?? '');
-      if (token) initials.add(token);
-    }
-    return ['ALL', ...Array.from(initials).sort()];
-  }, [stocks]);
+  const initialOptions = useMemo<('ALL' | ItemGroup)[]>(
+    () => ['ALL', ...GROUP_CODES, 'その他'],
+    []
+  );
 
   const keyword = normalize(debouncedSearchTerm);
 
   const filteredStocks = stocks.filter((stock) => {
-    if (initialFilter !== 'ALL') {
-      const initial = normalizeInitialFromName(stock.item_name ?? '');
-      if (initial !== initialFilter) return false;
+    if (groupFilter !== 'ALL') {
+      const group = getItemGroup(stock.item_name ?? '');
+      if (group !== groupFilter) return false;
     }
 
     if (!keyword) return true;
@@ -113,9 +99,9 @@ export default function StockPage() {
                   <button
                     key={code}
                     type="button"
-                    onClick={() => setInitialFilter(code)}
+                    onClick={() => setGroupFilter(code)}
                     className={`rounded px-3 py-1 text-xs font-medium border ${
-                      initialFilter === code
+                      groupFilter === code
                         ? 'border-blue-500 bg-blue-50 text-blue-600'
                         : 'border-gray-300 bg-white text-gray-700'
                     }`}
