@@ -70,7 +70,7 @@ export default function TransactionsPage() {
       <main className="max-w-6xl mx-auto px-4 py-6">
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b">
-            <h1 className="text-2xl font-bold">
+            <h1 className="text-2xl font-bold text-gray-900">
               {session?.user?.role === 'worker' ? 'あなたの登録履歴' : '取引一覧'}
             </h1>
           </div>
@@ -126,8 +126,8 @@ export default function TransactionsPage() {
             <div className="px-6 py-8 text-center text-gray-500">取引がありません</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-100 border-b">
+              <table className="w-full text-gray-900">
+                <thead className="bg-gray-100 border-b text-gray-700">
                   <tr>
                     <th className="text-left px-6 py-3 font-medium">日付</th>
                     <th className="text-left px-6 py-3 font-medium">種別</th>

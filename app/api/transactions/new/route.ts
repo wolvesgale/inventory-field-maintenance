@@ -116,6 +116,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const status: Transaction['status'] =
+      body.transactionType === 'OUT' ? 'pending' : 'draft';
+
     const transactionRecord: Omit<Transaction, 'id'> = {
       item_code: itemCode ?? buildItemCode(base, location),
       item_name: itemName,
@@ -126,7 +129,7 @@ export async function POST(request: NextRequest) {
       user_name: session.user.name,
       area,
       date,
-      status: 'pending', // 使用申請：必ず pending で登録
+      status,
     };
 
     await addTransaction(transactionRecord);
