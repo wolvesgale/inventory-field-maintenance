@@ -22,8 +22,8 @@ export default function LoginPage() {
 
     try {
       const result = await signIn('credentials', {
-        login_id: loginId,
-        password: password,
+        loginId,
+        password,
         redirect: false,
       });
 
@@ -53,11 +53,12 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* ログインID */}
           <div>
-            <label htmlFor="login_id" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="loginId" className="block text-sm font-medium text-gray-700 mb-1">
               ログインID
             </label>
             <input
-              id="login_id"
+              id="loginId"
+              name="loginId"
               type="text"
               value={loginId}
               onChange={(e) => setLoginId(e.target.value)}
@@ -74,6 +75,7 @@ export default function LoginPage() {
             </label>
             <input
               id="password"
+              name="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
