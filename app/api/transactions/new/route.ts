@@ -134,10 +134,7 @@ export async function POST(request: NextRequest) {
 
     await addTransaction(transactionRecord);
 
-    return NextResponse.json({
-      success: true,
-      message: '取引を登録しました',
-    });
+    return NextResponse.json({ success: true, message: '取引を登録しました' });
   } catch (error) {
     console.error('Failed to create transaction:', error);
     return NextResponse.json(
