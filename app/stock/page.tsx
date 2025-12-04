@@ -4,7 +4,7 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Navigation } from '@/components/Navigation';
 import { NewItemBadge } from '@/components/StatusBadge';
@@ -51,13 +51,22 @@ export default function StockPage() {
 
   const normalize = (value: unknown) => (value ?? '').toString().toLowerCase();
   const normalizeUpper = (value: unknown) => (value ?? '').toString().trim().toUpperCase();
-  const getInitial = (name: string) => normalizeUpper(name).slice(0, 2);
+  const getInitialToken = (name: string) => normalizeUpper(name).split(/[\s\u3000]+/)[0] ?? '';
+
+  const initialOptions = useMemo(() => {
+    const initials = new Set<string>();
+    for (const stock of stocks) {
+      const token = getInitialToken(stock.item_name ?? '');
+      if (token) initials.add(token);
+    }
+    return ['ALL', ...Array.from(initials).sort()];
+  }, [stocks]);
 
   const keyword = normalize(debouncedSearchTerm);
 
   const filteredStocks = stocks.filter((stock) => {
     if (initialFilter !== 'ALL') {
-      const initial = getInitial(stock.item_name ?? '');
+      const initial = getInitialToken(stock.item_name ?? '');
       if (initial !== initialFilter) return false;
     }
 
@@ -91,7 +100,7 @@ export default function StockPage() {
           ) : (
             <div className="px-6 pt-4">
               <div className="mb-4 flex flex-wrap items-center gap-2">
-                {['ALL', 'MA', 'RA', 'EG'].map((code) => (
+                {initialOptions.map((code) => (
                   <button
                     key={code}
                     type="button"

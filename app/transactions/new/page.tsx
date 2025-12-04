@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 
-const WAREHOUSE_OPTIONS = ['本社倉庫', '東日本センター', '西日本センター'] as const;
+const WAREHOUSE_OPTIONS = ['箕面', '茨木', '八尾'] as const;
 const TRANSACTION_TYPE_OPTIONS = [
   { value: 'IN', label: '入庫' },
   { value: 'OUT', label: '出庫' },
