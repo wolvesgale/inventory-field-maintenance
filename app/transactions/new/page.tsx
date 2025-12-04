@@ -57,6 +57,14 @@ const toLower = (value: unknown) => normalize(value).toLowerCase();
 const getInitialToken = (name: string) => normalize(name).split(/[\s\u3000]+/)[0]?.toUpperCase() ?? '';
 
 export default function NewTransactionPage() {
+  return (
+    <Suspense fallback={<div className="p-4 text-sm text-gray-600">フォームを読み込み中です…</div>}>
+      <NewTransactionForm />
+    </Suspense>
+  );
+}
+
+function NewTransactionForm() {
   const router = useRouter();
   const { status } = useSession();
   const [form, setForm] = useState<TransactionFormState>(() => createInitialState());

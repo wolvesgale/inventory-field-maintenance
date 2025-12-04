@@ -40,6 +40,48 @@ const buildReason = (transactionType: TransactionType, base: string, location: s
   return details.join(' | ');
 };
 
+type TransactionCategory = '棚卸' | '入庫' | '出庫';
+
+interface TransactionRequestBody {
+  date?: unknown;
+  base?: unknown;
+  location?: unknown;
+  itemName?: unknown;
+  itemCode?: unknown;
+  quantity?: unknown;
+  transactionType?: unknown;
+  memo?: unknown;
+}
+
+const isTransactionCategory = (value: unknown): value is TransactionCategory => {
+  return value === '棚卸' || value === '入庫' || value === '出庫';
+};
+
+const buildItemCode = (base: string, location: string): string => {
+  const trimmedBase = base.trim();
+  const trimmedLocation = location.trim();
+  if (trimmedBase && trimmedLocation) {
+    return `${trimmedBase} / ${trimmedLocation}`;
+  }
+  return trimmedBase || trimmedLocation || 'N/A';
+};
+
+const buildReason = (
+  transactionType: TransactionCategory,
+  base: string,
+  location: string,
+  memo?: string
+): string => {
+  const details = [`種別: ${transactionType}`, `拠点: ${base}`];
+  if (location) {
+    details.push(`棚: ${location}`);
+  }
+  if (memo) {
+    details.push(`メモ: ${memo}`);
+  }
+  return details.join(' | ');
+};
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
