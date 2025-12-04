@@ -1,15 +1,18 @@
 'use client';
 
-import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 
 const WAREHOUSE_OPTIONS = ['本社倉庫', '東日本センター', '西日本センター'] as const;
-const TRANSACTION_TYPES = ['棚卸', '入庫', '出庫'] as const;
+const TRANSACTION_TYPE_OPTIONS = [
+  { value: 'IN', label: '入庫' },
+  { value: 'OUT', label: '出庫' },
+] as const;
 
 type WarehouseOption = (typeof WAREHOUSE_OPTIONS)[number];
-type TransactionTypeOption = (typeof TRANSACTION_TYPES)[number];
+type TransactionTypeOption = (typeof TRANSACTION_TYPE_OPTIONS)[number]['value'];
 
 type ItemCandidate = {
   item_code: string;
@@ -45,9 +48,13 @@ const createInitialState = (): TransactionFormState => ({
   itemName: '',
   itemCode: '',
   quantity: '',
-  transactionType: TRANSACTION_TYPES[0],
+  transactionType: 'IN',
   memo: '',
 });
+
+const normalize = (value: unknown) => (value ?? '').toString();
+const toLower = (value: unknown) => normalize(value).toLowerCase();
+const getInitialToken = (name: string) => normalize(name).split(/[\s\u3000]+/)[0]?.toUpperCase() ?? '';
 
 export default function NewTransactionPage() {
   return (
@@ -59,16 +66,16 @@ export default function NewTransactionPage() {
 
 function NewTransactionForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { status } = useSession();
   const [form, setForm] = useState<TransactionFormState>(() => createInitialState());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [itemSearch, setItemSearch] = useState('');
   const [debouncedItemSearch, setDebouncedItemSearch] = useState('');
+  const [itemInitial, setItemInitial] = useState('');
+  const [debouncedItemInitial, setDebouncedItemInitial] = useState('');
   const [itemCandidates, setItemCandidates] = useState<ItemCandidate[]>([]);
   const [showItemDropdown, setShowItemDropdown] = useState(false);
-  const [hasPrefilled, setHasPrefilled] = useState(false);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -85,15 +92,26 @@ function NewTransactionForm() {
   }, [itemSearch]);
 
   useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedItemInitial(itemInitial);
+    }, 300);
+
+    return () => clearTimeout(handle);
+  }, [itemInitial]);
+
+  useEffect(() => {
     const keyword = debouncedItemSearch.trim();
-    if (!keyword) {
+    const initialFilter = debouncedItemInitial.trim().toUpperCase();
+
+    if (!keyword && !initialFilter) {
       setItemCandidates([]);
       setShowItemDropdown(false);
       return;
     }
 
     const fetchItems = async () => {
-      const response = await fetch(`/api/items/search?q=${encodeURIComponent(keyword)}`);
+      const query = keyword || initialFilter;
+      const response = await fetch(`/api/items/search?q=${encodeURIComponent(query)}`);
       if (!response.ok) {
         return;
       }
@@ -113,8 +131,19 @@ function NewTransactionForm() {
         }))
         .filter((candidate) => candidate.item_code && candidate.item_name);
 
-      setItemCandidates(mapped);
-      setShowItemDropdown(mapped.length > 0);
+      const filtered = mapped.filter((candidate) => {
+        const nameLower = toLower(candidate.item_name);
+        const codeLower = toLower(candidate.item_code);
+        const initial = getInitialToken(candidate.item_name);
+
+        const matchesKeyword = !keyword || nameLower.includes(keyword.toLowerCase()) || codeLower.includes(keyword.toLowerCase());
+        const matchesInitial = !initialFilter || initial.startsWith(initialFilter);
+
+        return matchesKeyword && matchesInitial;
+      });
+
+      setItemCandidates(filtered);
+      setShowItemDropdown(filtered.length > 0);
     };
 
     fetchItems().catch((error) => {
@@ -122,7 +151,7 @@ function NewTransactionForm() {
       setItemCandidates([]);
       setShowItemDropdown(false);
     });
-  }, [debouncedItemSearch]);
+  }, [debouncedItemInitial, debouncedItemSearch]);
 
   const isFormDisabled = useMemo(() => status !== 'authenticated', [status]);
 
@@ -142,34 +171,12 @@ function NewTransactionForm() {
     );
   }
 
-  const handleFieldChange = (field: keyof TransactionFormState) => (
-    value: string
-  ) => {
+  const handleFieldChange = (field: keyof TransactionFormState) => (value: string) => {
     setForm((prev) => ({
       ...prev,
       [field]: value,
     }));
   };
-
-  useEffect(() => {
-    if (hasPrefilled) return;
-
-    const prefillItemName = searchParams?.get('itemName') ?? '';
-    const prefillItemCode = searchParams?.get('itemCode') ?? '';
-    const prefillTypeParam = searchParams?.get('type') ?? '';
-
-    if (prefillItemName || prefillItemCode || prefillTypeParam) {
-      setForm((prev) => ({
-        ...prev,
-        itemName: prefillItemName || prev.itemName,
-        itemCode: prefillItemCode || prev.itemCode,
-        transactionType: prefillTypeParam.toUpperCase() === 'USE' ? '出庫' : prev.transactionType,
-      }));
-      setItemSearch(prefillItemName || prefillItemCode);
-    }
-
-    setHasPrefilled(true);
-  }, [hasPrefilled, searchParams]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -222,6 +229,7 @@ function NewTransactionForm() {
       window.alert('登録しました');
       setForm(createInitialState());
       setItemSearch('');
+      setItemInitial('');
       setItemCandidates([]);
       setShowItemDropdown(false);
     } catch (error) {
@@ -237,10 +245,7 @@ function NewTransactionForm() {
       <div className="max-w-3xl mx-auto px-4">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-gray-900">棚卸／在庫移動 登録</h1>
-          <Link
-            href="/dashboard"
-            className="text-sm font-medium text-blue-600 hover:text-blue-500"
-          >
+          <Link href="/dashboard" className="text-sm font-medium text-blue-600 hover:text-blue-500">
             ダッシュボードへ戻る
           </Link>
         </div>
@@ -287,18 +292,13 @@ function NewTransactionForm() {
               </select>
             </div>
 
-            {/* 棚/ロケーション（現状未使用のため非表示） */}
-            <input
-              type="hidden"
-              name="location"
-              value={form.location ?? ''}
-            />
+            <input type="hidden" name="location" value={form.location ?? ''} />
 
             <div>
               <label htmlFor="itemName" className="mb-2 block text-sm font-medium text-gray-700">
                 品目名
               </label>
-              <div className="relative">
+              <div className="relative space-y-2">
                 <input
                   id="itemName"
                   type="text"
@@ -314,6 +314,14 @@ function NewTransactionForm() {
                   disabled={isFormDisabled}
                   onFocus={() => setShowItemDropdown(itemCandidates.length > 0)}
                 />
+                <input
+                  type="text"
+                  value={itemInitial}
+                  onChange={(event) => setItemInitial(event.target.value)}
+                  placeholder="イニシャル (例: EG / MA / RA / SAD)"
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  disabled={isFormDisabled}
+                />
                 {showItemDropdown && itemCandidates.length > 0 && (
                   <ul className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white text-sm shadow">
                     {itemCandidates.map((item) => (
@@ -322,6 +330,7 @@ function NewTransactionForm() {
                         className="cursor-pointer px-3 py-2 text-gray-900 hover:bg-blue-50"
                         onClick={() => {
                           setItemSearch(item.item_name);
+                          setItemInitial(getInitialToken(item.item_name));
                           setShowItemDropdown(false);
                           setForm((prev) => ({
                             ...prev,
@@ -362,13 +371,13 @@ function NewTransactionForm() {
               <select
                 id="transactionType"
                 value={form.transactionType}
-                onChange={(event) => handleFieldChange('transactionType')(event.target.value)}
+                onChange={(event) => handleFieldChange('transactionType')(event.target.value as TransactionTypeOption)}
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 disabled={isFormDisabled}
               >
-                {TRANSACTION_TYPES.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
+                {TRANSACTION_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>

@@ -156,14 +156,7 @@ export default function StockPage() {
                           <button
                             type="button"
                             disabled={(stock.closing_qty ?? 0) <= 0}
-                            onClick={() => {
-                              const params = new URLSearchParams({
-                                itemCode: String(stock.item_code ?? ''),
-                                itemName: String(stock.item_name ?? ''),
-                                type: 'USE',
-                              });
-                              router.push(`/transactions/new?${params.toString()}`);
-                            }}
+                            onClick={() => router.push('/transactions/new')}
                             className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
                           >
                             使用申請
