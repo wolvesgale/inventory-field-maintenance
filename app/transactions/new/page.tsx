@@ -59,19 +59,8 @@ const normalizeInitialFromName = (name: string): string => {
   const [rawToken = ''] = withoutBullet.split(/[\s\u3000]+/);
   const upper = rawToken.toUpperCase();
 
-  if (!upper) return 'その他';
-  if (upper.startsWith('SAD')) return 'SAD';
-  if (upper === 'その他') return 'その他';
-  if (!/^[A-Z]/.test(upper)) return 'その他';
-  return upper;
-};
-
-const normalizeInitialInput = (value: string): string => {
-  const upper = value.trim().toUpperCase();
   if (!upper) return '';
   if (upper.startsWith('SAD')) return 'SAD';
-  if (upper === 'その他') return 'その他';
-  if (!/^[A-Z]/.test(upper)) return 'その他';
   return upper;
 };
 
@@ -120,16 +109,16 @@ function NewTransactionForm() {
 
   useEffect(() => {
     const keyword = debouncedItemSearch.trim();
-    const normalizedInitialFilter = normalizeInitialInput(debouncedItemInitial);
+    const initialInput = debouncedItemInitial.trim().toUpperCase();
 
-    if (!keyword && !normalizedInitialFilter) {
+    if (!keyword && !initialInput) {
       setItemCandidates([]);
       setShowItemDropdown(false);
       return;
     }
 
     const fetchItems = async () => {
-      const query = keyword || normalizedInitialFilter;
+      const query = keyword || initialInput;
       const response = await fetch(`/api/items/search?q=${encodeURIComponent(query)}`);
       if (!response.ok) {
         return;
@@ -156,7 +145,8 @@ function NewTransactionForm() {
         const normalizedInitial = normalizeInitialFromName(candidate.item_name);
 
         const matchesKeyword = !keyword || nameLower.includes(keyword.toLowerCase()) || codeLower.includes(keyword.toLowerCase());
-        const matchesInitial = !normalizedInitialFilter || normalizedInitial === normalizedInitialFilter;
+        const matchesInitial =
+          !initialInput || normalizedInitial.startsWith(initialInput);
 
         return matchesKeyword && matchesInitial;
       });
