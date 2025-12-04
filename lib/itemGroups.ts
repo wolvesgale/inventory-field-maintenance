@@ -1,8 +1,12 @@
 export const GROUP_CODES = ['SAD', 'BU', 'CA', 'FR', 'EG', 'CF', 'MA'] as const;
 
 export type ItemGroup = (typeof GROUP_CODES)[number] | 'その他';
+export type ItemGroupFilter = ItemGroup | 'ALL';
 
-export function getItemGroup(name: string): ItemGroup {
+/**
+ * 品目名から表示用のグループを決定する
+ */
+export function getItemGroupFromName(name: string): ItemGroup {
   const raw = (name ?? '').toString().trim();
   const withoutBullet = raw.replace(/^■\s*/, '');
   const head = withoutBullet.slice(0, 5).toUpperCase();
@@ -17,3 +21,6 @@ export function getItemGroup(name: string): ItemGroup {
 
   return 'その他';
 }
+
+// 後方互換エクスポート
+export const getItemGroup = getItemGroupFromName;

@@ -4,7 +4,7 @@ import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { getItemGroup } from '@/lib/itemGroups';
+import { GROUP_CODES, ItemGroupFilter, getItemGroupFromName } from '@/lib/itemGroups';
 
 const WAREHOUSE_OPTIONS = ['箕面', '茨木', '八尾'] as const;
 const TRANSACTION_TYPE_OPTIONS = [
@@ -71,10 +71,9 @@ function NewTransactionForm() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [itemSearch, setItemSearch] = useState('');
   const [debouncedItemSearch, setDebouncedItemSearch] = useState('');
-  const [itemInitial, setItemInitial] = useState('');
-  const [debouncedItemInitial, setDebouncedItemInitial] = useState('');
   const [itemCandidates, setItemCandidates] = useState<ItemCandidate[]>([]);
   const [showItemDropdown, setShowItemDropdown] = useState(false);
+  const [itemGroup, setItemGroup] = useState<ItemGroupFilter>('ALL');
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -91,25 +90,16 @@ function NewTransactionForm() {
   }, [itemSearch]);
 
   useEffect(() => {
-    const handle = setTimeout(() => {
-      setDebouncedItemInitial(itemInitial);
-    }, 300);
-
-    return () => clearTimeout(handle);
-  }, [itemInitial]);
-
-  useEffect(() => {
     const keyword = debouncedItemSearch.trim().toLowerCase();
-    const initialInput = debouncedItemInitial.trim().toUpperCase();
 
-    if (!keyword && !initialInput) {
+    if (itemGroup === 'ALL' && !keyword) {
       setItemCandidates([]);
       setShowItemDropdown(false);
       return;
     }
 
     const fetchItems = async () => {
-      const query = keyword || initialInput;
+      const query = keyword || (itemGroup !== 'ALL' ? itemGroup : '');
       const response = await fetch(`/api/items/search?q=${encodeURIComponent(query)}`);
       if (!response.ok) {
         return;
@@ -133,11 +123,11 @@ function NewTransactionForm() {
       const filtered = mapped.filter((candidate) => {
         const nameLower = toLower(candidate.item_name);
         const codeLower = toLower(candidate.item_code);
-        const normalizedInitial = getItemGroup(candidate.item_name);
+        const group = getItemGroupFromName(candidate.item_name);
 
         const matchesKeyword =
           !keyword || nameLower.includes(keyword) || codeLower.includes(keyword);
-        const matchesInitial = !initialInput || normalizedInitial === initialInput;
+        const matchesInitial = itemGroup === 'ALL' || group === itemGroup;
 
         return matchesKeyword && matchesInitial;
       });
@@ -151,7 +141,7 @@ function NewTransactionForm() {
       setItemCandidates([]);
       setShowItemDropdown(false);
     });
-  }, [debouncedItemInitial, debouncedItemSearch]);
+  }, [debouncedItemSearch, itemGroup]);
 
   const isFormDisabled = useMemo(() => status !== 'authenticated', [status]);
 
@@ -229,7 +219,7 @@ function NewTransactionForm() {
       window.alert('登録しました');
       setForm(createInitialState());
       setItemSearch('');
-      setItemInitial('');
+      setItemGroup('ALL');
       setItemCandidates([]);
       setShowItemDropdown(false);
     } catch (error) {
@@ -299,14 +289,23 @@ function NewTransactionForm() {
                 品目名
               </label>
               <div className="relative space-y-2">
-                <input
-                  type="text"
-                  value={itemInitial}
-                  onChange={(event) => setItemInitial(event.target.value)}
-                  placeholder="イニシャル (例: EG / MA / RA / SAD)"
-                  className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  disabled={isFormDisabled}
-                />
+                <div className="flex flex-wrap gap-2">
+                  {(['ALL', ...GROUP_CODES, 'その他'] as ItemGroupFilter[]).map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => setItemGroup(code)}
+                      className={`rounded px-3 py-1 text-xs font-medium border ${
+                        itemGroup === code
+                          ? 'border-blue-500 bg-blue-50 text-blue-600'
+                          : 'border-gray-300 bg-white text-gray-700'
+                      }`}
+                      disabled={isFormDisabled}
+                    >
+                      {code === 'ALL' ? 'すべて' : code}
+                    </button>
+                  ))}
+                </div>
                 <input
                   id="itemName"
                   type="text"
@@ -330,7 +329,7 @@ function NewTransactionForm() {
                         className="cursor-pointer px-3 py-2 text-gray-900 hover:bg-blue-50"
                         onClick={() => {
                           setItemSearch(item.item_name);
-                          setItemInitial(getItemGroup(item.item_name));
+                          setItemGroup(getItemGroupFromName(item.item_name));
                           setShowItemDropdown(false);
                           setForm((prev) => ({
                             ...prev,

@@ -8,11 +8,11 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Navigation } from '@/components/Navigation';
 import { StatusBadge } from '@/components/StatusBadge';
-import { Transaction, TransactionView } from '@/types';
+import { Transaction } from '@/types';
 
 export default function TransactionsPage() {
   const { data: session } = useSession();
-  const [transactions, setTransactions] = useState<TransactionView[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [pendingTransactions, setPendingTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isPendingLoading, setIsPendingLoading] = useState(true);
@@ -82,7 +82,7 @@ export default function TransactionsPage() {
             )}
             {isPendingLoading ? (
               <div className="mb-6 text-sm text-gray-600">未承認申請を読み込み中...</div>
-            ) : pendingTransactions.length === 0 ? (
+            ) : pendingTransactions.filter((tx) => tx.status === 'pending' && tx.type === 'OUT').length === 0 ? (
               <div className="mb-6 text-sm text-gray-600">未承認の使用申請はありません。</div>
             ) : (
               <div className="mb-6 overflow-x-auto">
@@ -98,16 +98,18 @@ export default function TransactionsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {pendingTransactions.map((tx) => (
-                      <tr key={tx.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2">{tx.date}</td>
-                        <td className="px-4 py-2">{tx.item_code}</td>
-                        <td className="px-4 py-2">{tx.item_name}</td>
-                        <td className="px-4 py-2">{tx.qty}</td>
-                        <td className="px-4 py-2">{tx.user_name}</td>
-                        <td className="px-4 py-2">{tx.area}</td>
-                      </tr>
-                    ))}
+                    {pendingTransactions
+                      .filter((tx) => tx.status === 'pending' && tx.type === 'OUT')
+                      .map((tx) => (
+                        <tr key={tx.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-2">{tx.date}</td>
+                          <td className="px-4 py-2">{tx.item_code}</td>
+                          <td className="px-4 py-2">{tx.item_name}</td>
+                          <td className="px-4 py-2">{tx.qty}</td>
+                          <td className="px-4 py-2">{tx.user_name}</td>
+                          <td className="px-4 py-2">{tx.area}</td>
+                        </tr>
+                      ))}
                   </tbody>
                 </table>
               </div>
@@ -132,7 +134,8 @@ export default function TransactionsPage() {
                     <th className="text-left px-6 py-3 font-medium">日付</th>
                     <th className="text-left px-6 py-3 font-medium">種別</th>
                     <th className="text-left px-6 py-3 font-medium">品目コード</th>
-                    <th className="text-left px-6 py-3 font-medium">数量</th>
+                    <th className="text-left px-6 py-3 font-medium">品目名</th>
+                    <th className="text-right px-6 py-3 font-medium">数量</th>
                     <th className="text-left px-6 py-3 font-medium">ステータス</th>
                     {session?.user?.role !== 'worker' && (
                       <th className="text-left px-6 py-3 font-medium">登録者</th>
@@ -140,14 +143,13 @@ export default function TransactionsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {transactions.map((tx, idx) => (
-                    <tr key={idx} className="border-b hover:bg-gray-50">
+                  {transactions.map((tx) => (
+                    <tr key={tx.id ?? `${tx.item_code}-${tx.date}-${tx.user_id}`} className="border-b hover:bg-gray-50">
                       <td className="px-6 py-3">{tx.date}</td>
-                      <td className="px-6 py-3">
-                        {tx.type === 'IN' ? '入荷' : '納品・出庫'}
-                      </td>
+                      <td className="px-6 py-3">{tx.type === 'IN' ? '入庫' : '出庫'}</td>
                       <td className="px-6 py-3">{tx.item_code}</td>
-                      <td className="px-6 py-3">{tx.qty}</td>
+                      <td className="px-6 py-3">{tx.item_name}</td>
+                      <td className="px-6 py-3 text-right">{tx.qty}</td>
                       <td className="px-6 py-3">
                         <StatusBadge status={tx.status} />
                       </td>

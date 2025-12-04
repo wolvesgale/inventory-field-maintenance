@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
 import { Navigation } from '@/components/Navigation';
 import { NewItemBadge } from '@/components/StatusBadge';
 import { StockViewItem } from '@/types';
-import { GROUP_CODES, ItemGroup, getItemGroup } from '@/lib/itemGroups';
+import { GROUP_CODES, ItemGroupFilter, getItemGroupFromName } from '@/lib/itemGroups';
 
 export default function StockPage() {
   const router = useRouter();
@@ -18,7 +18,7 @@ export default function StockPage() {
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-  const [groupFilter, setGroupFilter] = useState<ItemGroup | 'ALL'>('ALL');
+  const [groupFilter, setGroupFilter] = useState<ItemGroupFilter>('ALL');
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -52,7 +52,7 @@ export default function StockPage() {
 
   const normalize = (value: unknown) => (value ?? '').toString().toLowerCase();
 
-  const initialOptions = useMemo<('ALL' | ItemGroup)[]>(
+  const initialOptions = useMemo<ItemGroupFilter[]>(
     () => ['ALL', ...GROUP_CODES, 'その他'],
     []
   );
@@ -61,7 +61,7 @@ export default function StockPage() {
 
   const filteredStocks = stocks.filter((stock) => {
     if (groupFilter !== 'ALL') {
-      const group = getItemGroup(stock.item_name ?? '');
+      const group = getItemGroupFromName(stock.item_name ?? '');
       if (group !== groupFilter) return false;
     }
 
