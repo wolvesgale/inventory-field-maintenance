@@ -54,7 +54,26 @@ const createInitialState = (): TransactionFormState => ({
 
 const normalize = (value: unknown) => (value ?? '').toString();
 const toLower = (value: unknown) => normalize(value).toLowerCase();
-const getInitialToken = (name: string) => normalize(name).split(/[\s\u3000]+/)[0]?.toUpperCase() ?? '';
+const normalizeInitialFromName = (name: string): string => {
+  const withoutBullet = normalize(name).trim().replace(/^■\s*/, '');
+  const [rawToken = ''] = withoutBullet.split(/[\s\u3000]+/);
+  const upper = rawToken.toUpperCase();
+
+  if (!upper) return 'その他';
+  if (upper.startsWith('SAD')) return 'SAD';
+  if (upper === 'その他') return 'その他';
+  if (!/^[A-Z]/.test(upper)) return 'その他';
+  return upper;
+};
+
+const normalizeInitialInput = (value: string): string => {
+  const upper = value.trim().toUpperCase();
+  if (!upper) return '';
+  if (upper.startsWith('SAD')) return 'SAD';
+  if (upper === 'その他') return 'その他';
+  if (!/^[A-Z]/.test(upper)) return 'その他';
+  return upper;
+};
 
 export default function NewTransactionPage() {
   return (
@@ -101,16 +120,16 @@ function NewTransactionForm() {
 
   useEffect(() => {
     const keyword = debouncedItemSearch.trim();
-    const initialFilter = debouncedItemInitial.trim().toUpperCase();
+    const normalizedInitialFilter = normalizeInitialInput(debouncedItemInitial);
 
-    if (!keyword && !initialFilter) {
+    if (!keyword && !normalizedInitialFilter) {
       setItemCandidates([]);
       setShowItemDropdown(false);
       return;
     }
 
     const fetchItems = async () => {
-      const query = keyword || initialFilter;
+      const query = keyword || normalizedInitialFilter;
       const response = await fetch(`/api/items/search?q=${encodeURIComponent(query)}`);
       if (!response.ok) {
         return;
@@ -134,10 +153,10 @@ function NewTransactionForm() {
       const filtered = mapped.filter((candidate) => {
         const nameLower = toLower(candidate.item_name);
         const codeLower = toLower(candidate.item_code);
-        const initial = getInitialToken(candidate.item_name);
+        const normalizedInitial = normalizeInitialFromName(candidate.item_name);
 
         const matchesKeyword = !keyword || nameLower.includes(keyword.toLowerCase()) || codeLower.includes(keyword.toLowerCase());
-        const matchesInitial = !initialFilter || initial.startsWith(initialFilter);
+        const matchesInitial = !normalizedInitialFilter || normalizedInitial === normalizedInitialFilter;
 
         return matchesKeyword && matchesInitial;
       });
@@ -330,7 +349,7 @@ function NewTransactionForm() {
                         className="cursor-pointer px-3 py-2 text-gray-900 hover:bg-blue-50"
                         onClick={() => {
                           setItemSearch(item.item_name);
-                          setItemInitial(getInitialToken(item.item_name));
+                          setItemInitial(normalizeInitialFromName(item.item_name));
                           setShowItemDropdown(false);
                           setForm((prev) => ({
                             ...prev,

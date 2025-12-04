@@ -50,13 +50,22 @@ export default function StockPage() {
   }, []);
 
   const normalize = (value: unknown) => (value ?? '').toString().toLowerCase();
-  const normalizeUpper = (value: unknown) => (value ?? '').toString().trim().toUpperCase();
-  const getInitialToken = (name: string) => normalizeUpper(name).split(/[\s\u3000]+/)[0] ?? '';
+  const normalizeInitialFromName = (name: string): string => {
+    const withoutBullet = (name ?? '').toString().trim().replace(/^■\s*/, '');
+    const [rawToken = ''] = withoutBullet.split(/[\s\u3000]+/);
+    const upper = rawToken.toUpperCase();
+
+    if (!upper) return 'その他';
+    if (upper.startsWith('SAD')) return 'SAD';
+    if (upper === 'その他') return 'その他';
+    if (!/^[A-Z]/.test(upper)) return 'その他';
+    return upper;
+  };
 
   const initialOptions = useMemo(() => {
     const initials = new Set<string>();
     for (const stock of stocks) {
-      const token = getInitialToken(stock.item_name ?? '');
+      const token = normalizeInitialFromName(stock.item_name ?? '');
       if (token) initials.add(token);
     }
     return ['ALL', ...Array.from(initials).sort()];
@@ -66,7 +75,7 @@ export default function StockPage() {
 
   const filteredStocks = stocks.filter((stock) => {
     if (initialFilter !== 'ALL') {
-      const initial = getInitialToken(stock.item_name ?? '');
+      const initial = normalizeInitialFromName(stock.item_name ?? '');
       if (initial !== initialFilter) return false;
     }
 
