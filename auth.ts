@@ -1,65 +1,51 @@
 // auth.ts
-import type { NextAuthOptions } from "next-auth";
+import type { NextAuthOptions, User } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { getUserByLoginId } from "@/lib/sheets";
 
+type UserRole = "worker" | "manager";
+
+type AuthenticatedUser = User;
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
-      name: "Inventory Login",
+      name: "Credentials",
       credentials: {
-        login_id: { label: "ログインID", type: "text" },
+        loginId: { label: "ログインID", type: "text" },
         password: { label: "パスワード", type: "password" },
       },
-      async authorize(credentials) {
-        console.log('[DEBUG] authorize called with:', {
-          login_id: credentials?.login_id,
-          password: credentials?.password ? '***' : 'undefined',
-        });
-
-        if (!credentials?.login_id || !credentials?.password) {
-          console.log('[DEBUG] Missing credentials');
-          return null;
+      async authorize(credentials): Promise<User | null> {
+        if (!credentials?.loginId || !credentials?.password) {
+          throw new Error("ログインIDとパスワードを入力してください。");
         }
 
-        try {
-          const user = await getUserByLoginId(credentials.login_id);
-          console.log('[DEBUG] getUserByLoginId result:', user ? { ...user, password_hash: '***' } : null);
+        const loginId = credentials.loginId.trim();
+        const user = await getUserByLoginId(loginId);
 
-          if (!user) {
-            console.log('[DEBUG] User not found or not active');
-            return null;
-          }
-
-          if (!user.password_hash) {
-            console.log('[DEBUG] User has no password_hash');
-            return null;
-          }
-
-          const ok = await bcrypt.compare(
-            credentials.password,
-            user.password_hash
-          );
-          console.log('[DEBUG] bcrypt.compare result:', ok);
-          
-          if (!ok) {
-            console.log('[DEBUG] Password does not match');
-            return null;
-          }
-
-          console.log('[DEBUG] Auth successful, returning user object');
-          return {
-            id: user.id,
-            name: user.name || user.login_id,
-            email: `${user.login_id}@dummy.local`,
-            role: user.role,
-            area: user.area,
-          } as any;
-        } catch (error) {
-          console.error('[DEBUG] authorize error:', error);
-          return null;
+        if (!user || user.active !== true) {
+          throw new Error("ログインIDまたはパスワードが違います。");
         }
+
+        const ok = await bcrypt.compare(credentials.password, user.password_hash);
+
+        if (!ok) {
+          throw new Error("ログインIDまたはパスワードが違います。");
+        }
+
+        const rawRole = (user.role ?? "").trim().toLowerCase();
+        const role: UserRole = rawRole === "manager" ? "manager" : "worker";
+
+        const authenticatedUser: User = {
+          id: String(user.id),
+          name: user.name || "",
+          login_id: user.login_id,
+          role,
+          area: user.area ?? undefined,
+        };
+
+        return authenticatedUser;
       },
     }),
   ],
@@ -72,15 +58,23 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        (token as any).role = (user as any).role ?? "worker";
-        (token as any).area = (user as any).area ?? "";
+        const authUser = user as AuthenticatedUser;
+        token.login_id = authUser.login_id;
+        token.role = authUser.role;
+        token.area = authUser.area;
+        token.name = authUser.name;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).role = (token as any).role;
-        (session.user as any).area = (token as any).area;
+        session.user.id = (token.sub as string | undefined) ?? session.user.id;
+        session.user.name =
+          (token.name as string | undefined) ?? session.user.name;
+        session.user.login_id =
+          (token.login_id as string | undefined) ?? session.user.login_id;
+        session.user.role = (token.role as UserRole | undefined) ?? session.user.role;
+        session.user.area = (token.area as string | undefined) ?? session.user.area;
       }
       return session;
     },
