@@ -8,13 +8,16 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Navigation } from '@/components/Navigation';
 import { StatusBadge } from '@/components/StatusBadge';
-import { TransactionView } from '@/types';
+import { Transaction, TransactionView } from '@/types';
 
 export default function TransactionsPage() {
   const { data: session } = useSession();
   const [transactions, setTransactions] = useState<TransactionView[]>([]);
+  const [pendingTransactions, setPendingTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPendingLoading, setIsPendingLoading] = useState(true);
   const [error, setError] = useState('');
+  const [pendingError, setPendingError] = useState('');
 
   useEffect(() => {
     const fetchTransactions = async () => {
@@ -38,6 +41,28 @@ export default function TransactionsPage() {
     fetchTransactions();
   }, []);
 
+  useEffect(() => {
+    const fetchPending = async () => {
+      try {
+        const response = await fetch('/api/transactions/pending');
+        const data = await response.json();
+
+        if (data.success) {
+          setPendingTransactions(data.data);
+        } else {
+          setPendingError(data.error || '未承認申請の取得に失敗しました');
+        }
+      } catch (err) {
+        setPendingError('ネットワークエラーが発生しました');
+        console.error('Failed to fetch pending transactions:', err);
+      } finally {
+        setIsPendingLoading(false);
+      }
+    };
+
+    fetchPending();
+  }, []);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navigation />
@@ -48,6 +73,45 @@ export default function TransactionsPage() {
             <h1 className="text-2xl font-bold">
               {session?.user?.role === 'worker' ? 'あなたの登録履歴' : '取引一覧'}
             </h1>
+          </div>
+
+          <div className="px-6 pt-6">
+            <h2 className="mb-3 text-lg font-semibold text-gray-900">未承認の使用申請</h2>
+            {pendingError && (
+              <div className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{pendingError}</div>
+            )}
+            {isPendingLoading ? (
+              <div className="mb-6 text-sm text-gray-600">未承認申請を読み込み中...</div>
+            ) : pendingTransactions.length === 0 ? (
+              <div className="mb-6 text-sm text-gray-600">未承認の使用申請はありません。</div>
+            ) : (
+              <div className="mb-6 overflow-x-auto">
+                <table className="w-full text-sm text-gray-900">
+                  <thead className="bg-gray-100 border-b text-gray-700">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-medium">日付</th>
+                      <th className="px-4 py-2 text-left font-medium">品目コード</th>
+                      <th className="px-4 py-2 text-left font-medium">品目名</th>
+                      <th className="px-4 py-2 text-left font-medium">数量</th>
+                      <th className="px-4 py-2 text-left font-medium">申請者</th>
+                      <th className="px-4 py-2 text-left font-medium">拠点</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {pendingTransactions.map((tx) => (
+                      <tr key={tx.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2">{tx.date}</td>
+                        <td className="px-4 py-2">{tx.item_code}</td>
+                        <td className="px-4 py-2">{tx.item_name}</td>
+                        <td className="px-4 py-2">{tx.qty}</td>
+                        <td className="px-4 py-2">{tx.user_name}</td>
+                        <td className="px-4 py-2">{tx.area}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {error && (
