@@ -1,267 +1,574 @@
-/**
- * /transactions/new ページ - 入出庫登録フォーム
- */
-
 'use client';
 
-import { useState, useCallback } from 'react';
+import React, { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Navigation } from '@/components/Navigation';
-import { Item } from '@/types';
+import { useSession } from 'next-auth/react';
+
+const WAREHOUSE_OPTIONS = ['箕面', '茨木', '八尾'] as const;
+const TRANSACTION_TYPE_OPTIONS = [
+  { value: 'IN', label: '入庫' },
+  { value: 'OUT', label: '出庫' },
+] as const;
+
+const ITEM_GROUPS = [
+  'すべて',
+  'SAD',
+  'BU',
+  'CA',
+  'FR',
+  'EG',
+  'CF',
+  'MA',
+  'その他',
+] as const;
+
+type WarehouseOption = (typeof WAREHOUSE_OPTIONS)[number];
+type TransactionType = (typeof TRANSACTION_TYPE_OPTIONS)[number]['value'];
+type ItemGroup = (typeof ITEM_GROUPS)[number];
+
+type ItemCandidate = {
+  item_code: string;
+  item_name: string;
+  initial_group?: string;
+};
+
+interface TransactionFormState {
+  date: string;
+  base: WarehouseOption;
+  location: string;
+  itemName: string;
+  itemCode: string;
+  quantity: string;
+  transactionType: TransactionType;
+  memo: string;
+}
+
+interface TransactionRequestPayload {
+  date: string;
+  base: string;
+  location: string;
+  itemName: string;
+  itemCode?: string;
+  quantity: number;
+  transactionType: TransactionType;
+  memo?: string;
+}
+
+const createInitialState = (): TransactionFormState => ({
+  date: new Date().toISOString().split('T')[0],
+  base: WAREHOUSE_OPTIONS[0],
+  location: '',
+  itemName: '',
+  itemCode: '',
+  quantity: '',
+  transactionType: 'OUT', // 使用申請デフォルトを出庫に
+  memo: '',
+});
+
+const normalize = (value: unknown) => (value ?? '').toString();
 
 export default function NewTransactionPage() {
   const router = useRouter();
-  const [type, setType] = useState<'IN' | 'OUT'>('IN');
-  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [itemCode, setItemCode] = useState('');
-  const [itemName, setItemName] = useState('');
-  const [qty, setQty] = useState('');
-  const [isNewItem, setIsNewItem] = useState(false);
-  const [suggestions, setSuggestions] = useState<Item[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
 
-  // 品目検索
-  const handleItemCodeChange = useCallback(async (value: string) => {
-    setItemCode(value);
-    setError('');
+  // editId は URL クエリから useEffect で取得する
+  const [editId, setEditId] = useState<string | null>(null);
 
-    if (value.length < 1) {
-      setSuggestions([]);
+  const { data: session, status } = useSession();
+
+  const [form, setForm] = useState<TransactionFormState>(() => createInitialState());
+  const [itemGroup, setItemGroup] = useState<ItemGroup>('すべて');
+  const [itemQuery, setItemQuery] = useState('');
+  const [debouncedItemQuery, setDebouncedItemQuery] = useState('');
+  const [itemCandidates, setItemCandidates] = useState<ItemCandidate[]>([]);
+  const [showItemDropdown, setShowItemDropdown] = useState(false);
+  const [isLoadingItems, setIsLoadingItems] = useState(false);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isEditMode, setIsEditMode] = useState<boolean>(false);
+
+  // URL から editId を取得（クライアント側だけ）
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('editId');
+    setEditId(id);
+  }, []);
+
+  // 認証チェック
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/login');
+    }
+  }, [status, router]);
+
+  // itemQuery デバウンス
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedItemQuery(itemQuery.trim());
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [itemQuery]);
+
+  // 編集モードの初期データ取得
+  useEffect(() => {
+    if (!editId) {
+      setIsEditMode(false);
+      setForm(createInitialState());
       return;
     }
 
-    try {
-      const response = await fetch(`/api/items/search?q=${encodeURIComponent(value)}`);
-      const data = await response.json();
+    const fetchTransaction = async () => {
+      try {
+        const res = await fetch(`/api/transactions/${editId}`);
+        if (!res.ok) {
+          throw new Error('取引情報の取得に失敗しました');
+        }
+        const data = await res.json();
+        if (!data?.success || !data?.data) {
+          throw new Error(data.error || '取引情報の取得に失敗しました');
+        }
 
-      if (data.success) {
-        setSuggestions(data.data);
-        const found = data.data.find((item: Item) => item.item_code === value);
-        if (found) {
-          setItemName(found.item_name);
-          setIsNewItem(false);
-        } else {
-          setIsNewItem(true);
+        const tx = data.data as {
+          date: string;
+          base: string;
+          location?: string;
+          item_code?: string;
+          item_name: string;
+          qty: number;
+          type: TransactionType;
+          memo?: string;
+          initial_group?: string;
+        };
+
+        setForm({
+          date: tx.date,
+          base: (tx.base as WarehouseOption) || WAREHOUSE_OPTIONS[0],
+          location: tx.location ?? '',
+          itemName: tx.item_name,
+          itemCode: tx.item_code ?? '',
+          quantity: String(tx.qty),
+          transactionType: tx.type,
+          memo: tx.memo ?? '',
+        });
+
+        setItemQuery(tx.item_name);
+        setItemGroup(
+          (tx.initial_group as ItemGroup) && ITEM_GROUPS.includes(tx.initial_group as ItemGroup)
+            ? (tx.initial_group as ItemGroup)
+            : 'すべて',
+        );
+
+        setIsEditMode(true);
+      } catch (error) {
+        console.error(error);
+        setSubmitError(
+          error instanceof Error ? error.message : '編集対象の取引を読み込めませんでした',
+        );
+      }
+    };
+
+    fetchTransaction();
+  }, [editId]);
+
+  // 品目サジェスト取得
+  useEffect(() => {
+    // 条件が何もない場合はサジェストを出さない
+    if (!debouncedItemQuery && itemGroup === 'すべて') {
+      setItemCandidates([]);
+      setShowItemDropdown(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchSuggestions = async () => {
+      try {
+        setIsLoadingItems(true);
+
+        const params = new URLSearchParams();
+        if (debouncedItemQuery) {
+          params.set('q', debouncedItemQuery);
+        }
+        if (itemGroup && itemGroup !== 'すべて') {
+          params.set('group', itemGroup);
+        }
+
+        const res = await fetch(`/api/items/search?${params.toString()}`);
+        if (!res.ok) {
+          throw new Error(`品目検索に失敗しました: ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (cancelled) return;
+
+        const raw = (data?.data ?? data?.items ?? data) as unknown;
+        const arr = Array.isArray(raw) ? raw : [];
+
+        const mapped: ItemCandidate[] = arr
+          .map((row: any) => ({
+            item_code: normalize(row.item_code),
+            item_name: normalize(row.item_name),
+            initial_group: row.initial_group ? normalize(row.initial_group) : undefined,
+          }))
+          .filter((row) => row.item_code && row.item_name);
+
+        const filtered = mapped.filter((row) => {
+          const name = row.item_name.toLowerCase();
+          const code = row.item_code.toLowerCase();
+          const q = debouncedItemQuery.toLowerCase();
+
+          const matchKeyword = !debouncedItemQuery || name.includes(q) || code.includes(q);
+          const matchGroup =
+            itemGroup === 'すべて' ||
+            row.initial_group === itemGroup ||
+            (!row.initial_group && itemGroup === 'その他');
+
+          return matchKeyword && matchGroup;
+        });
+
+        setItemCandidates(filtered);
+        setShowItemDropdown(filtered.length > 0);
+      } catch (error) {
+        console.error('Failed to fetch item suggestions', error);
+        if (!cancelled) {
+          setItemCandidates([]);
+          setShowItemDropdown(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingItems(false);
         }
       }
-    } catch (err) {
-      console.error('Failed to search items:', err);
+    };
+
+    fetchSuggestions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedItemQuery, itemGroup]);
+
+  const isFormDisabled = status !== 'authenticated';
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600">
+        読み込み中...
+      </div>
+    );
+  }
+
+  if (status === 'unauthenticated') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600">
+        ログインページへ移動しています...
+      </div>
+    );
+  }
+
+  const handleFieldChange =
+    (field: keyof TransactionFormState) => (value: string) => {
+      setForm((prev) => ({
+        ...prev,
+        [field]: value,
+      }));
+    };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitError(null);
+
+    if (!form.date) {
+      setSubmitError('日付を選択してください');
+      return;
     }
-  }, []);
 
-  // サジェスト選択
-  const handleSelectSuggestion = (item: Item) => {
-    setItemCode(item.item_code);
-    setItemName(item.item_name);
-    setIsNewItem(false);
-    setSuggestions([]);
-  };
+    if (!form.itemName.trim()) {
+      setSubmitError('品目名を入力してください');
+      return;
+    }
 
-  // フォーム送信
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setIsLoading(true);
+    const qty = Number(form.quantity);
+    if (!Number.isFinite(qty) || qty === 0) {
+      setSubmitError('数量は0以外の数値を入力してください');
+      return;
+    }
+
+    const payload: TransactionRequestPayload = {
+      date: form.date,
+      base: form.base,
+      location: form.location.trim(),
+      itemName: form.itemName.trim(),
+      itemCode: form.itemCode.trim() || undefined,
+      quantity: qty,
+      transactionType: form.transactionType,
+      memo: form.memo.trim() || undefined,
+    };
+
+    setIsSubmitting(true);
 
     try {
-      // バリデーション
-      if (!itemCode) {
-        setError('品目コードを入力してください');
-        return;
-      }
-      if (!qty || parseInt(qty) <= 0) {
-        setError('数量は1以上の整数を入力してください');
-        return;
-      }
-      if (isNewItem && !itemName) {
-        setError('新規品目の場合、品目名を入力してください');
-        return;
-      }
+      const url = isEditMode && editId ? `/api/transactions/${editId}` : '/api/transactions/new';
+      const method = isEditMode && editId ? 'PATCH' : 'POST';
 
-      const response = await fetch('/api/transactions/new', {
-        method: 'POST',
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type,
-          date,
-          item_code: itemCode,
-          item_name: itemName || undefined,
-          qty: parseInt(qty),
-          isNewItem,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
+      const data = await res.json().catch(() => ({}));
 
-      if (!data.success) {
-        setError(data.error || '登録に失敗しました');
-        return;
+      if (!res.ok || data?.success === false) {
+        throw new Error(data?.error || '登録に失敗しました');
       }
 
-      // 成功時、取引一覧へ遷移
-      router.push('/transactions');
-    } catch (err) {
-      setError('ネットワークエラーが発生しました');
-      console.error('Failed to submit:', err);
+      window.alert(isEditMode ? '取引を更新しました' : '取引を登録しました');
+
+      if (isEditMode) {
+        router.push('/transactions');
+      } else {
+        setForm(createInitialState());
+        setItemQuery('');
+        setItemCandidates([]);
+        setShowItemDropdown(false);
+        setItemGroup('すべて');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '登録に失敗しました';
+      setSubmitError(message);
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navigation />
+    <div className="min-h-screen bg-gray-50 py-10">
+      <div className="max-w-3xl mx-auto px-4">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">
+            {isEditMode ? '取引の編集' : '入出庫／使用申請 登録'}
+          </h1>
+          <button
+            type="button"
+            className="text-sm font-medium text-blue-600 hover:text-blue-500"
+            onClick={() => router.push('/dashboard')}
+          >
+            ダッシュボードへ戻る
+          </button>
+        </div>
 
-      <main className="max-w-2xl mx-auto px-4 py-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <h1 className="text-2xl font-bold mb-6">入出庫登録</h1>
-
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-              {error}
+        <div className="bg-white rounded-xl shadow p-6">
+          {submitError && (
+            <div className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {submitError}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* 入/出選択 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                取引種別
-              </label>
-              <div className="flex gap-4">
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    value="IN"
-                    checked={type === 'IN'}
-                    onChange={(e) => setType(e.target.value as 'IN' | 'OUT')}
-                    className="mr-2"
-                  />
-                  入荷
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    value="OUT"
-                    checked={type === 'OUT'}
-                    onChange={(e) => setType(e.target.value as 'IN' | 'OUT')}
-                    className="mr-2"
-                  />
-                  納品・出庫
-                </label>
-              </div>
-            </div>
-
             {/* 日付 */}
             <div>
-              <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="date" className="mb-2 block text-sm font-medium text-gray-700">
                 日付
               </label>
               <input
                 id="date"
                 type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.date}
+                onChange={(event) => handleFieldChange('date')(event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 required
+                disabled={isFormDisabled}
               />
             </div>
 
-            {/* 品目コード */}
+            {/* 拠点 */}
             <div>
-              <label htmlFor="item_code" className="block text-sm font-medium text-gray-700 mb-1">
-                品目コード
+              <label htmlFor="base" className="mb-2 block text-sm font-medium text-gray-700">
+                拠点
               </label>
-              <input
-                id="item_code"
-                type="text"
-                value={itemCode}
-                onChange={(e) => handleItemCodeChange(e.target.value)}
-                placeholder="品目コードを入力"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-              />
-
-              {/* サジェスト */}
-              {suggestions.length > 0 && (
-                <div className="mt-2 border border-gray-300 rounded-lg overflow-hidden">
-                  {suggestions.map((item) => (
-                    <button
-                      key={item.item_code}
-                      type="button"
-                      onClick={() => handleSelectSuggestion(item)}
-                      className="w-full text-left px-4 py-2 hover:bg-blue-50 border-b last:border-b-0"
-                    >
-                      <div className="font-medium">{item.item_code}</div>
-                      <div className="text-sm text-gray-600">{item.item_name}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {isNewItem && itemCode && (
-                <p className="mt-2 text-orange-600 text-sm">
-                  ⚠️ この品目は新規です。下の「品目名」を入力してください。
-                </p>
-              )}
+              <select
+                id="base"
+                value={form.base}
+                onChange={(event) => handleFieldChange('base')(event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                disabled={isFormDisabled}
+              >
+                {WAREHOUSE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            {/* 品目名 (新規のみ) */}
-            {isNewItem && (
-              <div>
-                <label htmlFor="item_name" className="block text-sm font-medium text-gray-700 mb-1">
-                  品目名
-                </label>
-                <input
-                  id="item_name"
-                  type="text"
-                  value={itemName}
-                  onChange={(e) => setItemName(e.target.value)}
-                  placeholder="品目名を入力"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
+            {/* location は隠し（仕様上は使わない） */}
+            <input type="hidden" name="location" value={form.location ?? ''} />
+
+            {/* 品目グループボタン＋検索 */}
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">品目</label>
+
+              {/* グループボタン */}
+              <div className="mb-2 flex flex-wrap gap-2">
+                {ITEM_GROUPS.map((group) => (
+                  <button
+                    key={group}
+                    type="button"
+                    onClick={() => setItemGroup(group)}
+                    className={`rounded px-3 py-1 text-xs font-medium border ${
+                      itemGroup === group
+                        ? 'border-blue-500 bg-blue-50 text-blue-600'
+                        : 'border-gray-300 bg-white text-gray-700'
+                    }`}
+                    disabled={isFormDisabled}
+                  >
+                    {group}
+                  </button>
+                ))}
               </div>
-            )}
+
+              {/* キーワード検索＋サジェスト */}
+              <div className="relative space-y-2">
+                <input
+                  type="text"
+                  value={itemQuery}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setItemQuery(value);
+                    setForm((prev) => ({ ...prev, itemName: value, itemCode: '' }));
+                  }}
+                  placeholder="品目名または品目コードで検索"
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  required
+                  disabled={isFormDisabled}
+                  onFocus={() => {
+                    if (itemCandidates.length > 0) setShowItemDropdown(true);
+                  }}
+                />
+
+                {isLoadingItems && (
+                  <div className="text-xs text-gray-500">品目候補を読み込み中...</div>
+                )}
+
+                {showItemDropdown && itemCandidates.length > 0 && (
+                  <ul className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white text-sm shadow">
+                    {itemCandidates.map((item) => (
+                      <li
+                        key={item.item_code}
+                        className="cursor-pointer px-3 py-2 hover:bg-blue-50"
+                        onClick={() => {
+                          setItemQuery(item.item_name);
+                          setForm((prev) => ({
+                            ...prev,
+                            itemName: item.item_name,
+                            itemCode: item.item_code,
+                          }));
+                          setShowItemDropdown(false);
+                        }}
+                      >
+                        <div className="font-medium text-gray-900">{item.item_name}</div>
+                        <div className="text-xs text-gray-600">{item.item_code}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
 
             {/* 数量 */}
             <div>
-              <label htmlFor="qty" className="block text-sm font-medium text-gray-700 mb-1">
-                数量
+              <label htmlFor="quantity" className="mb-2 block text-sm font-medium text-gray-700">
+                数量（0 以外）
               </label>
               <input
-                id="qty"
+                id="quantity"
                 type="number"
-                value={qty}
-                onChange={(e) => setQty(e.target.value)}
-                placeholder="数量を入力"
-                min="1"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
+                value={form.quantity}
+                onChange={(event) => handleFieldChange('quantity')(event.target.value)}
+                placeholder="例：10 または -3"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                step="1"
+                disabled={isFormDisabled}
+              />
+            </div>
+
+            {/* 取引種別 */}
+            <div>
+              <label
+                htmlFor="transactionType"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
+                取引種別
+              </label>
+              <select
+                id="transactionType"
+                value={form.transactionType}
+                onChange={(event) =>
+                  handleFieldChange('transactionType')(event.target.value as TransactionType)
+                }
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                disabled={isFormDisabled}
+              >
+                {TRANSACTION_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* メモ */}
+            <div>
+              <label htmlFor="memo" className="mb-2 block text-sm font-medium text-gray-700">
+                メモ（任意）
+              </label>
+              <textarea
+                id="memo"
+                value={form.memo}
+                onChange={(event) => handleFieldChange('memo')(event.target.value)}
+                rows={4}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="特記事項があれば入力"
+                disabled={isFormDisabled}
               />
             </div>
 
             {/* ボタン */}
-            <div className="flex gap-4">
+            <div className="flex gap-3">
               <button
                 type="submit"
-                disabled={isLoading}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition"
+                className="flex-1 rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                disabled={isSubmitting || isFormDisabled}
               >
-                {isLoading ? '登録中...' : '登録'}
+                {isSubmitting
+                  ? '送信中...'
+                  : isEditMode
+                  ? 'この内容で更新する'
+                  : 'この内容で登録する'}
               </button>
-              <button
-                type="button"
-                onClick={() => router.back()}
-                className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 px-4 rounded-lg transition"
-              >
-                キャンセル
-              </button>
+              {!isEditMode && (
+                <button
+                  type="button"
+                  className="rounded-lg border border-gray-300 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  onClick={() => {
+                    setForm(createInitialState());
+                    setItemQuery('');
+                    setItemCandidates([]);
+                    setShowItemDropdown(false);
+                    setItemGroup('すべて');
+                    setSubmitError(null);
+                  }}
+                  disabled={isSubmitting || isFormDisabled}
+                >
+                  入力リセット
+                </button>
+              )}
             </div>
           </form>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
