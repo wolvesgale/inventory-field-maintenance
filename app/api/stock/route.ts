@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
         closing_qty: 0,
         new_flag: !!item.new_flag,
         is_new: !!item.new_flag,
+        initial_group: item.initial_group || 'その他',
       });
     });
 
@@ -53,6 +54,7 @@ export async function GET(request: NextRequest) {
           closing_qty: 0,
           new_flag: false,
           is_new: !!item?.new_flag,
+          initial_group: item?.initial_group || 'その他',
         });
       }
 

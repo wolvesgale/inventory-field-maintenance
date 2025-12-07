@@ -25,11 +25,12 @@ export async function GET(request: NextRequest) {
     }
 
     // ユーザー情報を関連付け
-    const transactionsView: TransactionView[] = filteredTransactions.map((tx) => {
-      return {
+    const transactionsView: TransactionView[] = filteredTransactions
+      .slice()
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      .map((tx) => ({
         ...tx,
-      } as TransactionView;
-    });
+      } as TransactionView));
 
     return NextResponse.json({
       success: true,
