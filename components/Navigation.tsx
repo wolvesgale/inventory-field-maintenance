@@ -19,6 +19,7 @@ const navLinks: NavLink[] = [
   { href: '/transactions/new', label: '入出庫登録', roles: ['worker', 'manager', 'admin'] },
   { href: '/transactions', label: '登録履歴', roles: ['worker', 'manager', 'admin'] },
   { href: '/approve', label: '承認', roles: ['manager', 'admin'] },
+  { href: '/users', label: 'ユーザー管理', roles: ['manager', 'admin'] },
   { href: '/stock', label: '在庫台帳', roles: ['manager', 'admin'] },
   { href: '/physical-count', label: '棚卸', roles: ['manager', 'admin'] },
   { href: '/reports/monthly', label: '月次レポート', roles: ['manager', 'admin'] },

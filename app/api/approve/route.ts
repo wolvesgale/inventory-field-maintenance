@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/auth';
-import { getTransactionsByStatus, updateTransactionStatus } from '@/lib/sheets';
+import { getTransactionById, getTransactionsByStatus, updateTransactionStatus } from '@/lib/sheets';
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,10 +15,16 @@ export async function GET(request: NextRequest) {
     }
 
     const pendingTransactions = await getTransactionsByStatus('pending');
+    const area = session.user.area;
+    const filtered = pendingTransactions.filter((tx) => {
+      if (tx.type !== 'OUT') return false;
+      if (area && tx.area !== area) return false;
+      return true;
+    });
 
     return NextResponse.json({
       success: true,
-      data: pendingTransactions,
+      data: filtered,
     });
   } catch (error) {
     console.error('Failed to fetch pending transactions:', error);
@@ -44,6 +50,11 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Missing required fields' },
         { status: 400 }
       );
+    }
+
+    const current = await getTransactionById(transactionId);
+    if (!current || current.type !== 'OUT' || (session.user.area && current.area !== session.user.area)) {
+      return NextResponse.json({ success: false, error: '承認対象が見つかりません' }, { status: 404 });
     }
 
     if (action === 'approve') {
