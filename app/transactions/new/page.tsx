@@ -114,6 +114,14 @@ function NewTransactionForm() {
       setShowItemDropdown(false);
       return;
     }
+  }, [router, status]);
+
+    const fetchItems = async () => {
+      const query = keyword || '';
+      const response = await fetch(`/api/items/search?q=${encodeURIComponent(query)}`);
+      if (!response.ok) {
+        return;
+      }
 
     const fetchItems = async () => {
       const query = keyword || '';
