@@ -107,7 +107,9 @@ function NewTransactionForm() {
     return () => clearTimeout(handle);
   }, [itemSearch]);
 
+  // 品目サジェスト取得用
   useEffect(() => {
+    // フィルタ条件が一切ない場合はドロップダウンを閉じる
     if (!debouncedItemSearch && (!itemGroup || itemGroup === 'すべて' || itemGroup === 'ALL')) {
       setItemCandidates([]);
       setShowItemDropdown(false);
@@ -132,6 +134,30 @@ function NewTransactionForm() {
         const res = await fetch(`/api/stock?${params.toString()}`);
         if (!res.ok) {
           throw new Error(`Failed to fetch items: ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (cancelled) return;
+
+        const rawItems = Array.isArray((data as any).items)
+          ? (data as any).items
+          : Array.isArray((data as any).data)
+            ? (data as any).data
+            : data;
+
+        const filtered = (rawItems as ItemCandidate[] | undefined) ?? [];
+
+        setItemCandidates(filtered);
+        setShowItemDropdown(filtered.length > 0);
+      } catch (err) {
+        console.error('Failed to fetch item suggestions', err);
+        if (!cancelled) {
+          setItemCandidates([]);
+          setShowItemDropdown(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingItems(false);
         }
 
         const data = await res.json();
@@ -358,12 +384,6 @@ function NewTransactionForm() {
         throw new Error(data.error || '登録に失敗しました');
       }
     };
-
-    load().catch((err) => {
-      console.error(err);
-      setIsLoadingEdit(false);
-    });
-  }, [editId]);
 
       window.alert(editId ? '更新しました' : '登録しました');
       if (editId) {
