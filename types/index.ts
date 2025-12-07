@@ -14,7 +14,7 @@ export interface User {
   password_hash: string;
   role: UserRole;
   name: string;
-  area: string;
+  area?: string;
   active: boolean;
 }
 
@@ -23,7 +23,7 @@ export interface UserSession {
   login_id: string;
   role: UserRole;
   name: string;
-  area: string;
+  area?: string;
 }
 
 // NextAuth.js のセッション拡張
@@ -36,7 +36,7 @@ declare module 'next-auth' {
     login_id: string;
     role: UserRole;
     name: string;
-    area: string;
+    area?: string;
   }
 }
 
@@ -62,6 +62,7 @@ export interface Item {
   unit: string;
   created_at: string;
   new_flag: boolean;
+  initial_group?: string;
 }
 
 // ============================================================
@@ -161,6 +162,7 @@ export interface ApiResponse<T = any> {
 
 export interface StockViewItem extends StockLedgerEntry {
   is_new: boolean;
+  initial_group?: string;
 }
 
 export type TransactionView = Omit<Transaction, 'user_name' | 'item_name'> & {
