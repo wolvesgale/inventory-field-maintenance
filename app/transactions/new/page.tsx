@@ -115,6 +115,7 @@ function NewTransactionForm() {
       setShowItemDropdown(false);
       return;
     }
+  }, [router, status]);
 
     let cancelled = false;
 
@@ -154,6 +155,46 @@ function NewTransactionForm() {
         if (!cancelled) {
           setIsLoadingItems(false);
         }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedItemSearch, itemGroup]);
+
+  useEffect(() => {
+    if (!editId) return;
+
+    const load = async () => {
+      setIsLoadingEdit(true);
+      try {
+        const res = await fetch(`/api/transactions/${editId}`);
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '取引の取得に失敗しました');
+        }
+
+        const tx = data.data as Transaction;
+        const parsed = parseReason(tx.reason);
+        const baseOption = (WAREHOUSE_OPTIONS.find((opt) => opt === parsed.base) ?? WAREHOUSE_OPTIONS[0]) as WarehouseOption;
+
+        setForm({
+          date: tx.date || createInitialState().date,
+          base: baseOption,
+          location: parsed.location,
+          itemName: tx.item_name,
+          itemCode: tx.item_code,
+          quantity: String(tx.qty),
+          transactionType: tx.type,
+          memo: parsed.memo,
+        });
+        setItemSearch(tx.item_name);
+        setItemGroup((tx as any).initial_group || 'ALL');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '取引の取得に失敗しました';
+        setSubmitError(message);
+      } finally {
+        setIsLoadingEdit(false);
       }
     };
 
@@ -281,6 +322,7 @@ function NewTransactionForm() {
       if (!response.ok || !data.success) {
         throw new Error(data.error || '登録に失敗しました');
       }
+    };
 
       window.alert(editId ? '更新しました' : '登録しました');
       if (editId) {
