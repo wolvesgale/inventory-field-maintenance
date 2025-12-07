@@ -113,6 +113,7 @@ function NewTransactionForm() {
       setShowItemDropdown(false);
       return;
     }
+  }, [router, status]);
 
     let cancelled = false;
 
@@ -294,6 +295,38 @@ function NewTransactionForm() {
       if (!response.ok || !data.success) {
         throw new Error(data.error || '登録に失敗しました');
       }
+    };
+
+    load().catch((err) => {
+      console.error(err);
+      setIsLoadingEdit(false);
+    });
+  }, [editId]);
+
+  const isFormDisabled = useMemo(() => status !== 'authenticated' || isLoadingEdit, [status, isLoadingEdit]);
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600">
+        読み込み中...
+      </div>
+    );
+  }
+
+  if (status === 'unauthenticated') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600">
+        ログインページへ移動しています...
+      </div>
+    );
+  }
+
+  const handleFieldChange = (field: keyof TransactionFormState) => (value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
 
       window.alert(editId ? '更新しました' : '登録しました');
       if (editId) {
