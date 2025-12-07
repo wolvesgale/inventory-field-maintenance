@@ -2,9 +2,10 @@
 
 import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { GROUP_CODES, ItemGroupFilter } from '@/lib/itemGroups';
+import { Transaction } from '@/types';
 
 const WAREHOUSE_OPTIONS = ['箕面', '茨木', '八尾'] as const;
 const TRANSACTION_TYPE_OPTIONS = [
@@ -56,6 +57,18 @@ const createInitialState = (): TransactionFormState => ({
 
 const normalize = (value: unknown) => (value ?? '').toString();
 const toLower = (value: unknown) => normalize(value).toLowerCase();
+
+const parseReason = (reason?: string) => {
+  const baseMatch = reason?.match(/拠点:\s*([^|]+)/);
+  const locationMatch = reason?.match(/棚:\s*([^|]+)/);
+  const memoMatch = reason?.match(/メモ:\s*([^|]+)/);
+
+  return {
+    base: baseMatch?.[1]?.trim() || WAREHOUSE_OPTIONS[0],
+    location: locationMatch?.[1]?.trim() || '',
+    memo: memoMatch?.[1]?.trim() || '',
+  } as { base: string; location: string; memo: string };
+};
 export default function NewTransactionPage() {
   return (
     <Suspense fallback={<div className="p-4 text-sm text-gray-600">フォームを読み込み中です…</div>}>
@@ -66,7 +79,9 @@ export default function NewTransactionPage() {
 
 function NewTransactionForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { status } = useSession();
+  const editId = searchParams?.get('editId');
   const [form, setForm] = useState<TransactionFormState>(() => createInitialState());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -75,6 +90,7 @@ function NewTransactionForm() {
   const [itemCandidates, setItemCandidates] = useState<ItemCandidate[]>([]);
   const [showItemDropdown, setShowItemDropdown] = useState(false);
   const [itemGroup, setItemGroup] = useState<ItemGroupFilter>('ALL');
+  const [isLoadingEdit, setIsLoadingEdit] = useState(false);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -98,6 +114,7 @@ function NewTransactionForm() {
       setShowItemDropdown(false);
       return;
     }
+  }, [router, status]);
 
     const fetchItems = async () => {
       const query = keyword || '';
@@ -147,7 +164,49 @@ function NewTransactionForm() {
     });
   }, [debouncedItemSearch, itemGroup]);
 
-  const isFormDisabled = useMemo(() => status !== 'authenticated', [status]);
+  useEffect(() => {
+    if (!editId) return;
+
+    const load = async () => {
+      setIsLoadingEdit(true);
+      try {
+        const res = await fetch(`/api/transactions/${editId}`);
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '取引の取得に失敗しました');
+        }
+
+        const tx = data.data as Transaction;
+        const parsed = parseReason(tx.reason);
+        const baseOption = (WAREHOUSE_OPTIONS.find((opt) => opt === parsed.base) ?? WAREHOUSE_OPTIONS[0]) as WarehouseOption;
+
+        setForm({
+          date: tx.date || createInitialState().date,
+          base: baseOption,
+          location: parsed.location,
+          itemName: tx.item_name,
+          itemCode: tx.item_code,
+          quantity: String(tx.qty),
+          transactionType: tx.type,
+          memo: parsed.memo,
+        });
+        setItemSearch(tx.item_name);
+        setItemGroup((tx as any).initial_group || 'ALL');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '取引の取得に失敗しました';
+        setSubmitError(message);
+      } finally {
+        setIsLoadingEdit(false);
+      }
+    };
+
+    load().catch((err) => {
+      console.error(err);
+      setIsLoadingEdit(false);
+    });
+  }, [editId]);
+
+  const isFormDisabled = useMemo(() => status !== 'authenticated' || isLoadingEdit, [status, isLoadingEdit]);
 
   if (status === 'loading') {
     return (
@@ -206,8 +265,11 @@ function NewTransactionForm() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('/api/transactions/new', {
-        method: 'POST',
+      const endpoint = editId ? `/api/transactions/${editId}` : '/api/transactions/new';
+      const method = editId ? 'PATCH' : 'POST';
+
+      const response = await fetch(endpoint, {
+        method,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -220,12 +282,16 @@ function NewTransactionForm() {
         throw new Error(data.error || '登録に失敗しました');
       }
 
-      window.alert('登録しました');
-      setForm(createInitialState());
-      setItemSearch('');
-      setItemGroup('ALL');
-      setItemCandidates([]);
-      setShowItemDropdown(false);
+      window.alert(editId ? '更新しました' : '登録しました');
+      if (editId) {
+        router.push('/transactions');
+      } else {
+        setForm(createInitialState());
+        setItemSearch('');
+        setItemGroup('ALL');
+        setItemCandidates([]);
+        setShowItemDropdown(false);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '登録に失敗しました';
       setSubmitError(message);
@@ -245,6 +311,11 @@ function NewTransactionForm() {
         </div>
 
         <div className="bg-white rounded-xl shadow p-6">
+          {isLoadingEdit && (
+            <div className="mb-4 rounded border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+              取引内容を読み込んでいます...
+            </div>
+          )}
           {submitError && (
             <div className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {submitError}
@@ -407,7 +478,7 @@ function NewTransactionForm() {
                 className="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
                 disabled={isSubmitting || isFormDisabled}
               >
-                {isSubmitting ? '送信中...' : '登録'}
+                {isSubmitting ? '送信中...' : editId ? '更新' : '登録'}
               </button>
             </div>
           </form>

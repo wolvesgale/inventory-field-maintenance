@@ -5,8 +5,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/auth';
-import { getTransactions, getUsers } from '@/lib/sheets';
-import { TransactionView } from '@/types';
+import { getTransactions } from '@/lib/sheets';
+import { Transaction, TransactionView } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,9 +19,11 @@ export async function GET(request: NextRequest) {
     const userRole = (session.user as any)?.role;
 
     // worker は自分の取引のみ、manager/admin は全取引
-    let filteredTransactions = transactions;
+    let filteredTransactions: Transaction[] = transactions.filter(
+      (tx) => !( (!tx.item_code || tx.item_code.trim() === '') && (!tx.qty || tx.qty === 0) )
+    );
     if (userRole === 'worker') {
-      filteredTransactions = transactions.filter(tx => tx.user_id === (session.user as any).id);
+      filteredTransactions = filteredTransactions.filter(tx => tx.user_id === (session.user as any).id);
     }
 
     // ユーザー情報を関連付け

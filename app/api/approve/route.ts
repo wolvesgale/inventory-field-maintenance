@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/auth';
-import { getTransactionsByStatus, updateTransactionStatus } from '@/lib/sheets';
+import { getTransactionById, getTransactionsByStatus, updateTransactionStatus } from '@/lib/sheets';
 
 export async function GET(request: NextRequest) {
   try {
@@ -50,6 +50,11 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Missing required fields' },
         { status: 400 }
       );
+    }
+
+    const current = await getTransactionById(transactionId);
+    if (!current || current.type !== 'OUT' || (session.user.area && current.area !== session.user.area)) {
+      return NextResponse.json({ success: false, error: '承認対象が見つかりません' }, { status: 404 });
     }
 
     if (action === 'approve') {

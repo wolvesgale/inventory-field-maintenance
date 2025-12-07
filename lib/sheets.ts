@@ -347,6 +347,11 @@ export async function getTransactions(): Promise<Transaction[]> {
   return transactions;
 }
 
+export async function getTransactionById(id: string): Promise<Transaction | null> {
+  const transactions = await getTransactions();
+  return transactions.find((tx) => tx.id === id) ?? null;
+}
+
 /**
  * 新規トランザクションを追加
  */
@@ -379,6 +384,73 @@ export async function addTransaction(transaction: Omit<Transaction, 'id'>): Prom
   });
 
   return id;
+}
+
+export async function updateTransaction(id: string, updates: Partial<Omit<Transaction, 'id'>>): Promise<void> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "Transactions!A1:N1000";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) {
+    throw new Error('Transactions sheet is empty');
+  }
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+  const idIdx = colIndex("id");
+  const rowIndex = rows.findIndex((r) => r[idIdx] === id);
+  if (rowIndex === -1) {
+    throw new Error(`Transaction ${id} not found`);
+  }
+
+  const sourceRow = rows[rowIndex] ?? [];
+  const mergedRow = header.map((col, idx) => {
+    switch (col) {
+      case "id":
+        return id;
+      case "item_code":
+        return updates.item_code ?? sourceRow[idx] ?? "";
+      case "item_name":
+        return updates.item_name ?? sourceRow[idx] ?? "";
+      case "type":
+        return updates.type ?? (sourceRow[idx] as Transaction["type"]) ?? "IN";
+      case "qty":
+        return updates.qty !== undefined ? String(updates.qty) : String(sourceRow[idx] ?? "");
+      case "reason":
+        return updates.reason ?? sourceRow[idx] ?? "";
+      case "user_id":
+        return updates.user_id ?? sourceRow[idx] ?? "";
+      case "user_name":
+        return updates.user_name ?? sourceRow[idx] ?? "";
+      case "area":
+        return updates.area ?? sourceRow[idx] ?? "";
+      case "date":
+        return updates.date ?? sourceRow[idx] ?? "";
+      case "status":
+        return updates.status ?? (sourceRow[idx] as Transaction["status"]) ?? "draft";
+      case "approved_by":
+        return updates.approved_by ?? sourceRow[idx] ?? "";
+      case "approved_at":
+        return updates.approved_at ?? sourceRow[idx] ?? "";
+      default:
+        return sourceRow[idx] ?? "";
+    }
+  });
+
+  const lastColLetter = String.fromCharCode(65 + header.length - 1);
+  const updateRange = `Transactions!A${rowIndex + 1}:${lastColLetter}${rowIndex + 1}`;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: updateRange,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [mergedRow] },
+  });
 }
 
 /**
