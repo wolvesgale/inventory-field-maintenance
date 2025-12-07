@@ -107,10 +107,10 @@ function NewTransactionForm() {
     return () => clearTimeout(handle);
   }, [itemSearch]);
 
-  // 品目サジェスト取得用
+  // 品目サジェスト取得用 useEffect
   useEffect(() => {
     // フィルタ条件が一切ない場合はドロップダウンを閉じる
-    if (!debouncedItemSearch && (!itemGroup || itemGroup === 'すべて' || itemGroup === 'ALL')) {
+    if (!debouncedItemSearch && (!itemGroup || itemGroup === "すべて")) {
       setItemCandidates([]);
       setShowItemDropdown(false);
       return;
@@ -124,11 +124,11 @@ function NewTransactionForm() {
         setIsLoadingItems(true);
 
         const params = new URLSearchParams();
-        if (itemGroup && itemGroup !== 'すべて' && itemGroup !== 'ALL') {
-          params.set('group', itemGroup);
+        if (itemGroup && itemGroup !== "すべて") {
+          params.set("group", itemGroup);
         }
         if (debouncedItemSearch) {
-          params.set('q', debouncedItemSearch);
+          params.set("q", debouncedItemSearch);
         }
 
         const res = await fetch(`/api/stock?${params.toString()}`);
@@ -139,80 +139,19 @@ function NewTransactionForm() {
         const data = await res.json();
         if (cancelled) return;
 
-        const rawItems = Array.isArray((data as any).items)
+        const items: ItemCandidate[] = Array.isArray((data as any).items)
           ? (data as any).items
-          : Array.isArray((data as any).data)
-            ? (data as any).data
-            : data;
+          : (data as ItemCandidate[]);
 
-        const filtered = (rawItems as ItemCandidate[] | undefined) ?? [];
-
-        setItemCandidates(filtered);
-        setShowItemDropdown(filtered.length > 0);
-      } catch (err) {
-        console.error('Failed to fetch item suggestions', err);
-        if (!cancelled) {
-          setItemCandidates([]);
-          setShowItemDropdown(false);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoadingItems(false);
-        }
-
-        const data = await res.json();
-
-        if (cancelled) return;
-
-        const items = Array.isArray((data as any).items) ? (data as any).items : data;
-
-        setItemCandidates((items as ItemCandidate[]) ?? []);
-        setShowItemDropdown(((items as ItemCandidate[]) ?? []).length > 0);
+        setItemCandidates(items ?? []);
+        setShowItemDropdown((items ?? []).length > 0);
       } catch (error) {
-        console.error('Failed to fetch item suggestions', error);
+        console.error("Failed to fetch item suggestions", error);
         if (!cancelled) {
           setItemCandidates([]);
           setShowItemDropdown(false);
         }
       } finally {
-        if (!cancelled) {
-          setIsLoadingItems(false);
-        }
-
-        const mapped = candidates
-          .map((candidate) => ({
-            item_code: (candidate as ItemCandidate).item_code,
-            item_name: (candidate as ItemCandidate).item_name,
-            initial_group: (candidate as ItemCandidate).initial_group,
-          }))
-          .filter((candidate) => candidate.item_code && candidate.item_name);
-
-        const keyword = debouncedItemSearch.trim().toLowerCase();
-        const filtered = mapped.filter((candidate) => {
-          const nameLower = toLower(candidate.item_name);
-          const codeLower = toLower(candidate.item_code);
-          const group = candidate.initial_group
-            ? candidate.initial_group.toString().trim() || 'その他'
-            : 'その他';
-
-          const matchesKeyword =
-            !keyword || nameLower.includes(keyword) || codeLower.includes(keyword);
-          const matchesInitial = itemGroup === 'ALL' || group === itemGroup;
-
-          return matchesKeyword && matchesInitial;
-        });
-
-        setItemCandidates(filtered);
-        setShowItemDropdown(filtered.length > 0);
-      })
-      .catch((err) => {
-        console.error('Failed to fetch item suggestions', err);
-        if (!cancelled) {
-          setItemCandidates([]);
-          setShowItemDropdown(false);
-        }
-      })
-      .finally(() => {
         if (!cancelled) {
           setIsLoadingItems(false);
         }
