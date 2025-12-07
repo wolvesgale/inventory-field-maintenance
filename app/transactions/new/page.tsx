@@ -90,6 +90,7 @@ function NewTransactionForm() {
   const [itemCandidates, setItemCandidates] = useState<ItemCandidate[]>([]);
   const [showItemDropdown, setShowItemDropdown] = useState(false);
   const [itemGroup, setItemGroup] = useState<ItemGroupFilter>('ALL');
+  const [isLoadingItems, setIsLoadingItems] = useState(false);
   const [isLoadingEdit, setIsLoadingEdit] = useState(false);
 
   useEffect(() => {
@@ -107,69 +108,74 @@ function NewTransactionForm() {
   }, [itemSearch]);
 
   useEffect(() => {
-    const keyword = debouncedItemSearch.trim().toLowerCase();
-
-    if (itemGroup === 'ALL' && !keyword) {
+    if (!debouncedItemSearch && itemGroup === 'ALL') {
       setItemCandidates([]);
       setShowItemDropdown(false);
       return;
     }
   }, [router, status]);
 
-    const fetchItems = async () => {
-      const query = keyword || '';
-      const response = await fetch(`/api/items/search?q=${encodeURIComponent(query)}`);
-      if (!response.ok) {
-        return;
-      }
+    let cancelled = false;
 
-    const fetchItems = async () => {
-      const query = keyword || '';
-      const response = await fetch(`/api/items/search?q=${encodeURIComponent(query)}`);
-      if (!response.ok) {
-        return;
-      }
+    setIsLoadingItems(true);
 
-      const data = await response.json();
-      const candidates: unknown = data?.data ?? data?.items ?? data;
-      if (!Array.isArray(candidates)) {
-        setItemCandidates([]);
-        setShowItemDropdown(false);
-        return;
-      }
+    fetch(
+      `/api/stock?group=${encodeURIComponent(
+        itemGroup
+      )}&q=${encodeURIComponent(debouncedItemSearch || '')}`
+    )
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        const candidates: unknown = (data as any)?.items ?? data;
+        if (!Array.isArray(candidates)) {
+          setItemCandidates([]);
+          setShowItemDropdown(false);
+          return;
+        }
 
-      const mapped = candidates
-        .map((candidate) => ({
-          item_code: (candidate as ItemCandidate).item_code,
-          item_name: (candidate as ItemCandidate).item_name,
-          initial_group: (candidate as ItemCandidate).initial_group,
-        }))
-        .filter((candidate) => candidate.item_code && candidate.item_name);
+        const mapped = candidates
+          .map((candidate) => ({
+            item_code: (candidate as ItemCandidate).item_code,
+            item_name: (candidate as ItemCandidate).item_name,
+            initial_group: (candidate as ItemCandidate).initial_group,
+          }))
+          .filter((candidate) => candidate.item_code && candidate.item_name);
 
-      const filtered = mapped.filter((candidate) => {
-        const nameLower = toLower(candidate.item_name);
-        const codeLower = toLower(candidate.item_code);
-        const group = candidate.initial_group
-          ? candidate.initial_group.toString().trim() || 'その他'
-          : 'その他';
+        const keyword = debouncedItemSearch.trim().toLowerCase();
+        const filtered = mapped.filter((candidate) => {
+          const nameLower = toLower(candidate.item_name);
+          const codeLower = toLower(candidate.item_code);
+          const group = candidate.initial_group
+            ? candidate.initial_group.toString().trim() || 'その他'
+            : 'その他';
 
-        const matchesKeyword =
-          !keyword || nameLower.includes(keyword) || codeLower.includes(keyword);
-        const matchesInitial = itemGroup === 'ALL' || group === itemGroup;
+          const matchesKeyword =
+            !keyword || nameLower.includes(keyword) || codeLower.includes(keyword);
+          const matchesInitial = itemGroup === 'ALL' || group === itemGroup;
 
-        return matchesKeyword && matchesInitial;
+          return matchesKeyword && matchesInitial;
+        });
+
+        setItemCandidates(filtered);
+        setShowItemDropdown(filtered.length > 0);
+      })
+      .catch((err) => {
+        console.error('Failed to fetch item suggestions', err);
+        if (!cancelled) {
+          setItemCandidates([]);
+          setShowItemDropdown(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingItems(false);
+        }
       });
 
-      setItemCandidates(filtered);
-      setShowItemDropdown(filtered.length > 0);
+    return () => {
+      cancelled = true;
     };
-
-    fetchItems()
-      .catch((error) => {
-        console.error('Failed to search items', error);
-        setItemCandidates([]);
-        setShowItemDropdown(false);
-      });
   }, [debouncedItemSearch, itemGroup]);
 
   useEffect(() => {
@@ -289,6 +295,38 @@ function NewTransactionForm() {
       if (!response.ok || !data.success) {
         throw new Error(data.error || '登録に失敗しました');
       }
+    };
+
+    load().catch((err) => {
+      console.error(err);
+      setIsLoadingEdit(false);
+    });
+  }, [editId]);
+
+  const isFormDisabled = useMemo(() => status !== 'authenticated' || isLoadingEdit, [status, isLoadingEdit]);
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600">
+        読み込み中...
+      </div>
+    );
+  }
+
+  if (status === 'unauthenticated') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600">
+        ログインページへ移動しています...
+      </div>
+    );
+  }
+
+  const handleFieldChange = (field: keyof TransactionFormState) => (value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
 
       window.alert(editId ? '更新しました' : '登録しました');
       if (editId) {

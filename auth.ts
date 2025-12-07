@@ -8,10 +8,6 @@ type UserRole = "worker" | "manager";
 
 type AuthenticatedUser = User;
 
-type UserRole = "worker" | "manager";
-
-type AuthenticatedUser = User;
-
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
