@@ -1,88 +1,122 @@
-// auth.ts
-import type { NextAuthOptions } from "next-auth";
-import CredentialsProvider from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
-import { getUserByLoginId } from "@/lib/sheets";
+import { createHmac, randomBytes } from 'crypto';
+import bcrypt from 'bcryptjs';
+import { cookies } from 'next/headers';
+import type { NextRequest, NextResponse } from 'next/server';
+import { getUserByLoginId, updateUserPassword } from '@/lib/sheets';
+import type { UserSession } from '@/types';
 
-export const authOptions: NextAuthOptions = {
-  providers: [
-    CredentialsProvider({
-      name: "Inventory Login",
-      credentials: {
-        login_id: { label: "ログインID", type: "text" },
-        password: { label: "パスワード", type: "password" },
-      },
-      async authorize(credentials) {
-        console.log('[DEBUG] authorize called with:', {
-          login_id: credentials?.login_id,
-          password: credentials?.password ? '***' : 'undefined',
-        });
+const SESSION_COOKIE = 'app_session';
+const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-session-secret';
+const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 
-        if (!credentials?.login_id || !credentials?.password) {
-          console.log('[DEBUG] Missing credentials');
-          return null;
-        }
-
-        try {
-          const user = await getUserByLoginId(credentials.login_id);
-          console.log('[DEBUG] getUserByLoginId result:', user ? { ...user, password_hash: '***' } : null);
-
-          if (!user) {
-            console.log('[DEBUG] User not found or not active');
-            return null;
-          }
-
-          if (!user.password_hash) {
-            console.log('[DEBUG] User has no password_hash');
-            return null;
-          }
-
-          const ok = await bcrypt.compare(
-            credentials.password,
-            user.password_hash
-          );
-          console.log('[DEBUG] bcrypt.compare result:', ok);
-          
-          if (!ok) {
-            console.log('[DEBUG] Password does not match');
-            return null;
-          }
-
-          console.log('[DEBUG] Auth successful, returning user object');
-          return {
-            id: user.id,
-            name: user.name || user.login_id,
-            email: `${user.login_id}@dummy.local`,
-            role: user.role,
-            area: user.area,
-          } as any;
-        } catch (error) {
-          console.error('[DEBUG] authorize error:', error);
-          return null;
-        }
-      },
-    }),
-  ],
-  pages: {
-    signIn: "/login",
-  },
-  session: {
-    strategy: "jwt",
-  },
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        (token as any).role = (user as any).role ?? "worker";
-        (token as any).area = (user as any).area ?? "";
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user) {
-        (session.user as any).role = (token as any).role;
-        (session.user as any).area = (token as any).area;
-      }
-      return session;
-    },
-  },
+type SessionPayload = {
+  user: UserSession;
+  exp: number;
+  nonce: string;
 };
+
+function encodeBase64Url(value: string) {
+  return Buffer.from(value).toString('base64url');
+}
+
+function decodeBase64Url(value: string) {
+  return Buffer.from(value, 'base64url').toString();
+}
+
+function signPayload(payload: SessionPayload): string {
+  const body = encodeBase64Url(JSON.stringify(payload));
+  const hmac = createHmac('sha256', SESSION_SECRET);
+  hmac.update(body);
+  const signature = hmac.digest('base64url');
+  return `${body}.${signature}`;
+}
+
+function verifyToken(token: string | undefined): SessionPayload | null {
+  if (!token) return null;
+  const [body, signature] = token.split('.');
+  if (!body || !signature) return null;
+
+  const hmac = createHmac('sha256', SESSION_SECRET);
+  hmac.update(body);
+  const expected = hmac.digest('base64url');
+  if (signature !== expected) return null;
+
+  try {
+    const payload = JSON.parse(decodeBase64Url(body)) as SessionPayload;
+    if (!payload.exp || payload.exp < Date.now()) return null;
+    return payload;
+  } catch (error) {
+    console.error('Failed to parse session token', error);
+    return null;
+  }
+}
+
+export async function authenticate(loginId: string, password: string): Promise<UserSession | null> {
+  const user = await getUserByLoginId(loginId.trim());
+  if (!user || user.active !== true) return null;
+
+  let passwordHash = user.password_hash?.trim();
+
+  if (!passwordHash) {
+    console.warn(`No password_hash for login_id: ${loginId}`);
+    if (password !== user.login_id) {
+      return null;
+    }
+
+    passwordHash = await bcrypt.hash(password, 10);
+    await updateUserPassword(user.login_id, passwordHash);
+  }
+
+  const ok = await bcrypt.compare(password, passwordHash);
+  if (!ok) return null;
+
+  return {
+    id: String(user.id),
+    login_id: user.login_id,
+    role: (user.role === 'manager' ? 'manager' : 'worker'),
+    name: user.name || user.login_id,
+    area: user.area,
+  };
+}
+
+export function setSessionCookie(res: NextResponse, user: UserSession) {
+  const payload: SessionPayload = {
+    user,
+    exp: Date.now() + SESSION_TTL_MS,
+    nonce: randomBytes(8).toString('hex'),
+  };
+  const token = signPayload(payload);
+  res.cookies.set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: SESSION_TTL_MS / 1000,
+    path: '/',
+  });
+}
+
+export function clearSessionCookie(res: NextResponse) {
+  res.cookies.set(SESSION_COOKIE, '', { path: '/', maxAge: 0 });
+}
+
+export function getSessionUserFromRequest(req: NextRequest): UserSession | null {
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
+  const payload = verifyToken(token);
+  return payload?.user ?? null;
+}
+
+export function getSessionUserFromCookies(): UserSession | null {
+  const token = cookies().get(SESSION_COOKIE)?.value;
+  const payload = verifyToken(token);
+  return payload?.user ?? null;
+}
+
+export function buildSessionHeaders(user: UserSession): Record<string, string> {
+  const payload: SessionPayload = {
+    user,
+    exp: Date.now() + SESSION_TTL_MS,
+    nonce: randomBytes(8).toString('hex'),
+  };
+  const token = signPayload(payload);
+  return { Cookie: `${SESSION_COOKIE}=${token}` };
+}
