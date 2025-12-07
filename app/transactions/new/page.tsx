@@ -114,6 +114,7 @@ function NewTransactionForm() {
       setShowItemDropdown(false);
       return;
     }
+  }, [router, status]);
 
     const fetchItems = async () => {
       const query = keyword || '';
