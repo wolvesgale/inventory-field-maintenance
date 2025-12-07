@@ -62,6 +62,7 @@ export interface Item {
   unit: string;
   created_at: string;
   new_flag: boolean;
+  initial_group?: string;
 }
 
 // ============================================================
@@ -161,6 +162,7 @@ export interface ApiResponse<T = any> {
 
 export interface StockViewItem extends StockLedgerEntry {
   is_new: boolean;
+  initial_group?: string;
 }
 
 export type TransactionView = Omit<Transaction, 'user_name' | 'item_name'> & {

@@ -26,7 +26,8 @@ export default function TransactionsPage() {
         const data = await response.json();
 
         if (data.success) {
-          setTransactions(data.data);
+          const sorted = (data.data as Transaction[]).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          setTransactions(sorted);
         } else {
           setError(data.error || '取引一覧の取得に失敗しました');
         }
@@ -48,7 +49,10 @@ export default function TransactionsPage() {
         const data = await response.json();
 
         if (data.success) {
-          setPendingTransactions(data.data);
+          const sorted = (data.data as Transaction[])
+            .filter((tx) => tx.status === 'pending' && tx.type === 'OUT')
+            .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          setPendingTransactions(sorted);
         } else {
           setPendingError(data.error || '未承認申請の取得に失敗しました');
         }
@@ -82,12 +86,12 @@ export default function TransactionsPage() {
             )}
             {isPendingLoading ? (
               <div className="mb-6 text-sm text-gray-600">未承認申請を読み込み中...</div>
-            ) : pendingTransactions.filter((tx) => tx.status === 'pending' && tx.type === 'OUT').length === 0 ? (
+            ) : pendingTransactions.length === 0 ? (
               <div className="mb-6 text-sm text-gray-600">未承認の使用申請はありません。</div>
             ) : (
               <div className="mb-6 overflow-x-auto">
-                <table className="w-full text-sm text-gray-900">
-                  <thead className="bg-gray-100 border-b text-gray-700">
+                <table className="w-full text-sm text-gray-800">
+                  <thead className="bg-gray-100 border-b text-gray-800">
                     <tr>
                       <th className="px-4 py-2 text-left font-medium">日付</th>
                       <th className="px-4 py-2 text-left font-medium">品目コード</th>
@@ -128,8 +132,8 @@ export default function TransactionsPage() {
             <div className="px-6 py-8 text-center text-gray-500">取引がありません</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-gray-900">
-                <thead className="bg-gray-100 border-b text-gray-700">
+              <table className="w-full text-gray-800">
+                <thead className="bg-gray-100 border-b text-gray-800">
                   <tr>
                     <th className="text-left px-6 py-3 font-medium">日付</th>
                     <th className="text-left px-6 py-3 font-medium">種別</th>

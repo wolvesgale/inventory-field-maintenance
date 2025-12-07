@@ -4,7 +4,7 @@ import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { GROUP_CODES, ItemGroupFilter, getItemGroupFromName } from '@/lib/itemGroups';
+import { GROUP_CODES, ItemGroupFilter } from '@/lib/itemGroups';
 
 const WAREHOUSE_OPTIONS = ['箕面', '茨木', '八尾'] as const;
 const TRANSACTION_TYPE_OPTIONS = [
@@ -18,6 +18,7 @@ type TransactionTypeOption = (typeof TRANSACTION_TYPE_OPTIONS)[number]['value'];
 type ItemCandidate = {
   item_code: string;
   item_name: string;
+  initial_group?: string;
 };
 
 interface TransactionFormState {
@@ -99,7 +100,7 @@ function NewTransactionForm() {
     }
 
     const fetchItems = async () => {
-      const query = keyword || (itemGroup !== 'ALL' ? itemGroup : '');
+      const query = keyword || '';
       const response = await fetch(`/api/items/search?q=${encodeURIComponent(query)}`);
       if (!response.ok) {
         return;
@@ -117,13 +118,16 @@ function NewTransactionForm() {
         .map((candidate) => ({
           item_code: (candidate as ItemCandidate).item_code,
           item_name: (candidate as ItemCandidate).item_name,
+          initial_group: (candidate as ItemCandidate).initial_group,
         }))
         .filter((candidate) => candidate.item_code && candidate.item_name);
 
       const filtered = mapped.filter((candidate) => {
         const nameLower = toLower(candidate.item_name);
         const codeLower = toLower(candidate.item_code);
-        const group = getItemGroupFromName(candidate.item_name);
+        const group = candidate.initial_group
+          ? candidate.initial_group.toString().trim() || 'その他'
+          : 'その他';
 
         const matchesKeyword =
           !keyword || nameLower.includes(keyword) || codeLower.includes(keyword);
@@ -329,7 +333,7 @@ function NewTransactionForm() {
                         className="cursor-pointer px-3 py-2 text-gray-900 hover:bg-blue-50"
                         onClick={() => {
                           setItemSearch(item.item_name);
-                          setItemGroup(getItemGroupFromName(item.item_name));
+                          setItemGroup((item.initial_group as ItemGroupFilter | undefined) || 'その他');
                           setShowItemDropdown(false);
                           setForm((prev) => ({
                             ...prev,

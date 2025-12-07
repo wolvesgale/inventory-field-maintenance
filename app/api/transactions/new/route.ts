@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
     }
 
     const status: Transaction['status'] =
-      body.transactionType === 'OUT' ? 'pending' : 'draft';
+      body.transactionType === 'OUT' ? 'pending' : 'approved';
 
     const transactionRecord: Omit<Transaction, 'id'> = {
       item_code: itemCode ?? buildItemCode(base, location),

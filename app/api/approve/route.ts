@@ -16,7 +16,11 @@ export async function GET(request: NextRequest) {
 
     const pendingTransactions = await getTransactionsByStatus('pending');
     const area = session.user.area;
-    const filtered = area ? pendingTransactions.filter((tx) => tx.area === area) : pendingTransactions;
+    const filtered = pendingTransactions.filter((tx) => {
+      if (tx.type !== 'OUT') return false;
+      if (area && tx.area !== area) return false;
+      return true;
+    });
 
     return NextResponse.json({
       success: true,

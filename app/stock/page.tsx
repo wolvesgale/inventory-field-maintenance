@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
 import { Navigation } from '@/components/Navigation';
 import { NewItemBadge } from '@/components/StatusBadge';
 import { StockViewItem } from '@/types';
-import { GROUP_CODES, ItemGroupFilter, getItemGroupFromName } from '@/lib/itemGroups';
+import { GROUP_CODES, ItemGroupFilter } from '@/lib/itemGroups';
 
 export default function StockPage() {
   const router = useRouter();
@@ -61,7 +61,7 @@ export default function StockPage() {
 
   const filteredStocks = stocks.filter((stock) => {
     if (groupFilter !== 'ALL') {
-      const group = getItemGroupFromName(stock.item_name ?? '');
+      const group = stock.initial_group || 'その他';
       if (group !== groupFilter) return false;
     }
 
@@ -126,8 +126,8 @@ export default function StockPage() {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="min-w-full text-sm text-gray-900">
-                  <thead className="bg-gray-100 border-b text-gray-700">
+                <table className="min-w-full text-sm text-gray-800">
+                  <thead className="bg-gray-100 border-b text-gray-800">
                     <tr>
                       <th className="text-left px-6 py-3 font-medium">品目コード</th>
                       <th className="text-left px-6 py-3 font-medium">品目名</th>

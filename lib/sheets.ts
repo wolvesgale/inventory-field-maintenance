@@ -19,6 +19,7 @@ export type InventoryItem = {
   unit: string;
   created_at?: string;
   new_flag?: boolean;
+  initial_group?: string;
 };
 
 export type Transaction = {
@@ -202,7 +203,7 @@ export async function getUserByLoginId(login_id: string): Promise<AppUser | null
  */
 export async function getItems(): Promise<InventoryItem[]> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const range = "Items!A1:H1000";
+  const range = "Items!A1:Z1000";
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -223,6 +224,10 @@ export async function getItems(): Promise<InventoryItem[]> {
     unit: String(row[colIndex("unit")] || ""),
     created_at: row[colIndex("created_at")] ? String(row[colIndex("created_at")]) : undefined,
     new_flag: String(row[colIndex("new_flag")] || "").toLowerCase() === "true",
+    initial_group:
+      colIndex("initial_group") >= 0 && row[colIndex("initial_group")]
+        ? String(row[colIndex("initial_group")])
+        : "その他",
   }));
 
   return items;

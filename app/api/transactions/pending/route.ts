@@ -14,7 +14,7 @@ export async function GET() {
     const area = session.user.area;
     const transactions: Transaction[] = await getTransactions();
     const pending = transactions.filter((tx) => {
-      const isPending = tx.status === 'pending';
+      const isPending = tx.status === 'pending' && tx.type === 'OUT';
       if (!isPending) return false;
       if (!area) return true;
       return tx.area === area;
