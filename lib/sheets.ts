@@ -109,6 +109,37 @@ function getSheetsClient() {
   return { sheets, spreadsheetId };
 }
 
+/**
+ * StockLedger から item_code -> initial_group の対応表を取得
+ */
+export async function getInitialGroupMapFromStockLedger(): Promise<Map<string, string>> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "StockLedger!A1:H";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) return new Map();
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+  const codeIdx = colIndex("item_code");
+  const groupIdx = colIndex("initial_group");
+
+  const map = new Map<string, string>();
+  rows.slice(1).forEach((row) => {
+    const code = codeIdx >= 0 ? String(row[codeIdx] ?? "").trim() : "";
+    if (!code) return;
+    const group = groupIdx >= 0 ? String(row[groupIdx] ?? "").trim() : "";
+    map.set(code, group || "その他");
+  });
+
+  return map;
+}
+
 export async function getUserByLoginId(login_id: string): Promise<AppUser | null> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "Users!A1:G1000";
@@ -252,6 +283,8 @@ export async function getItems(): Promise<InventoryItem[]> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "Items!A1:Z1000";
 
+  const initialGroupMap = await getInitialGroupMapFromStockLedger().catch(() => new Map<string, string>());
+
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range,
@@ -271,10 +304,7 @@ export async function getItems(): Promise<InventoryItem[]> {
     unit: String(row[colIndex("unit")] || ""),
     created_at: row[colIndex("created_at")] ? String(row[colIndex("created_at")]) : undefined,
     new_flag: String(row[colIndex("new_flag")] || "").toLowerCase() === "true",
-    initial_group:
-      colIndex("initial_group") >= 0 && row[colIndex("initial_group")]
-        ? String(row[colIndex("initial_group")])
-        : "その他",
+    initial_group: initialGroupMap.get(String(row[colIndex("item_code")] || "")) || "その他",
   }));
 
   return items;
