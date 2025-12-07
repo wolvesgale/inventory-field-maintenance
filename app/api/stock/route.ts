@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/auth';
-import { getTransactions, getItems } from '@/lib/sheets';
+import { getTransactions, getItems, getInitialGroupMapFromStockLedger } from '@/lib/sheets';
 import { StockViewItem } from '@/types';
 
 export async function GET(request: NextRequest) {
@@ -16,7 +16,10 @@ export async function GET(request: NextRequest) {
     }
 
     const transactions = await getTransactions();
-    const items = await getItems();
+    const [items, initialGroupMap] = await Promise.all([
+      getItems(),
+      getInitialGroupMapFromStockLedger(),
+    ]);
 
     // 承認済み以上の取引を抽出
     const approvedTransactions = transactions.filter(tx => 
@@ -36,6 +39,7 @@ export async function GET(request: NextRequest) {
         closing_qty: 0,
         new_flag: !!item.new_flag,
         is_new: !!item.new_flag,
+        initial_group: initialGroupMap.get(item.item_code) || item.initial_group || 'その他',
       });
     });
 
@@ -53,6 +57,7 @@ export async function GET(request: NextRequest) {
           closing_qty: 0,
           new_flag: false,
           is_new: !!item?.new_flag,
+          initial_group: initialGroupMap.get(tx.item_code) || item?.initial_group || 'その他',
         });
       }
 
