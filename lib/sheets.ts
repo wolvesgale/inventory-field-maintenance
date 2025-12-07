@@ -199,6 +199,53 @@ export async function getUserByLoginId(login_id: string): Promise<AppUser | null
 }
 
 /**
+ * ユーザーパスワードを更新
+ */
+export async function updateUserPassword(
+  loginId: string,
+  hashedPassword: string
+): Promise<void> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "Users!A1:G1000";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) {
+    throw new Error("Users シートにデータがありません");
+  }
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+  const loginIdx = colIndex("login_id");
+  const passwordIdx = colIndex("password_hash");
+
+  if (loginIdx === -1 || passwordIdx === -1) {
+    throw new Error("Users シートのヘッダが想定と異なります");
+  }
+
+  const normalized = loginId.trim();
+  const rowIndex = rows.findIndex((row) => String(row[loginIdx]).trim() === normalized);
+
+  if (rowIndex === -1) {
+    throw new Error(`login_id=${normalized} の行が見つかりません`);
+  }
+
+  const columnLetter = String.fromCharCode(65 + passwordIdx);
+  const updateRange = `Users!${columnLetter}${rowIndex + 1}`;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: updateRange,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[hashedPassword]] },
+  });
+}
+
+/**
  * 全商品を取得
  */
 export async function getItems(): Promise<InventoryItem[]> {

@@ -28,6 +28,13 @@ export const authOptions: NextAuthOptions = {
           throw new Error("ログインIDまたはパスワードが違います。");
         }
 
+        if (!user.password_hash) {
+          console.error(`No password_hash for login_id: ${loginId}`);
+          throw new Error(
+            "パスワードが未設定です。管理者に問い合わせてください。"
+          );
+        }
+
         const ok = await bcrypt.compare(credentials.password, user.password_hash);
 
         if (!ok) {

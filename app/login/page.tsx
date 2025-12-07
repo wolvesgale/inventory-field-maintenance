@@ -43,6 +43,9 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-lg shadow-md p-6">
         <h1 className="text-center text-2xl font-bold text-slate-900 mb-6">在庫棚卸管理</h1>
+        <p className="mb-4 text-sm text-gray-700">
+          初期パスワードはログインIDと同じです。分からない場合は管理者に問い合わせてください。
+        </p>
 
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
