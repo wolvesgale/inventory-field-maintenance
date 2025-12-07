@@ -2,7 +2,11 @@
 import type { NextAuthOptions, User } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import { getUserByLoginId } from "@/lib/sheets";
+import { getUserByLoginId, updateUserPassword } from "@/lib/sheets";
+
+type UserRole = "worker" | "manager";
+
+type AuthenticatedUser = User;
 
 type UserRole = "worker" | "manager";
 
@@ -28,14 +32,20 @@ export const authOptions: NextAuthOptions = {
           throw new Error("ログインIDまたはパスワードが違います。");
         }
 
-        if (!user.password_hash) {
-          console.error(`No password_hash for login_id: ${loginId}`);
-          throw new Error(
-            "パスワードが未設定です。管理者に問い合わせてください。"
-          );
+        let passwordHash = user.password_hash?.trim();
+
+        if (!passwordHash) {
+          console.warn(`No password_hash for login_id: ${loginId}`);
+
+          if (credentials.password !== user.login_id) {
+            throw new Error("ログインIDまたはパスワードが違います。");
+          }
+
+          passwordHash = await bcrypt.hash(credentials.password, 10);
+          await updateUserPassword(user.login_id, passwordHash);
         }
 
-        const ok = await bcrypt.compare(credentials.password, user.password_hash);
+        const ok = await bcrypt.compare(credentials.password, passwordHash);
 
         if (!ok) {
           throw new Error("ログインIDまたはパスワードが違います。");

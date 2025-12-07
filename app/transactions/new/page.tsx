@@ -123,6 +123,13 @@ function NewTransactionForm() {
         return;
       }
 
+    const fetchItems = async () => {
+      const query = keyword || '';
+      const response = await fetch(`/api/items/search?q=${encodeURIComponent(query)}`);
+      if (!response.ok) {
+        return;
+      }
+
       const data = await response.json();
       const candidates: unknown = data?.data ?? data?.items ?? data;
       if (!Array.isArray(candidates)) {
@@ -157,11 +164,12 @@ function NewTransactionForm() {
       setShowItemDropdown(filtered.length > 0);
     };
 
-    fetchItems().catch((error) => {
-      console.error('Failed to search items', error);
-      setItemCandidates([]);
-      setShowItemDropdown(false);
-    });
+    fetchItems()
+      .catch((error) => {
+        console.error('Failed to search items', error);
+        setItemCandidates([]);
+        setShowItemDropdown(false);
+      });
   }, [debouncedItemSearch, itemGroup]);
 
   useEffect(() => {
