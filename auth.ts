@@ -1,7 +1,6 @@
 // auth.ts
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
 import { getUserByLoginId } from "@/lib/sheets";
 
 export const authOptions: NextAuthOptions = {
@@ -13,53 +12,48 @@ export const authOptions: NextAuthOptions = {
         password: { label: "パスワード", type: "password" },
       },
       async authorize(credentials) {
-        console.log('[DEBUG] authorize called with:', {
+        console.log("[DEBUG] authorize called with:", {
           login_id: credentials?.login_id,
-          password: credentials?.password ? '***' : 'undefined',
+          password: credentials?.password ? "***" : "undefined",
         });
 
         if (!credentials?.login_id || !credentials?.password) {
-          console.log('[DEBUG] Missing credentials');
-          return null;
+          console.log("[DEBUG] Missing credentials");
+          throw new Error("ログインIDとパスワードを入力してください");
         }
 
-        try {
-          const user = await getUserByLoginId(credentials.login_id);
-          console.log('[DEBUG] getUserByLoginId result:', user ? { ...user, password_hash: '***' } : null);
+        const loginId = credentials.login_id.trim();
+        const password = credentials.password;
 
-          if (!user) {
-            console.log('[DEBUG] User not found or not active');
-            return null;
-          }
+        const user = await getUserByLoginId(loginId);
+        console.log("[DEBUG] getUserByLoginId result:", user ? { ...user, password_hash: "***" } : null);
 
-          if (!user.password_hash) {
-            console.log('[DEBUG] User has no password_hash');
-            return null;
-          }
-
-          const ok = await bcrypt.compare(
-            credentials.password,
-            user.password_hash
-          );
-          console.log('[DEBUG] bcrypt.compare result:', ok);
-          
-          if (!ok) {
-            console.log('[DEBUG] Password does not match');
-            return null;
-          }
-
-          console.log('[DEBUG] Auth successful, returning user object');
-          return {
-            id: user.id,
-            name: user.name || user.login_id,
-            email: `${user.login_id}@dummy.local`,
-            role: user.role,
-            area: user.area,
-          } as any;
-        } catch (error) {
-          console.error('[DEBUG] authorize error:', error);
-          return null;
+        // ユーザーがいない or active ではない
+        if (!user) {
+          console.log("[DEBUG] User not found or not active");
+          throw new Error("ログインIDまたはパスワードが違います");
         }
+
+        // ★ ここが重要：Sheets の password_hash 列を「平文パスワード」としてそのまま比較
+        if (!user.password_hash) {
+          console.log("[DEBUG] User has no password_hash");
+          throw new Error("ログインIDまたはパスワードが違います");
+        }
+
+        if (user.password_hash !== password) {
+          console.log("[DEBUG] Password does not match");
+          throw new Error("ログインIDまたはパスワードが違います");
+        }
+
+        console.log("[DEBUG] Auth successful, returning user object");
+        return {
+          id: user.id,
+          login_id: user.login_id,
+          name: user.name || user.login_id,
+          email: `${user.login_id}@dummy.local`,
+          role: user.role,
+          area: user.area ?? "",
+        } as any;
       },
     }),
   ],

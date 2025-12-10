@@ -4,6 +4,11 @@ import { google } from "googleapis";
 export type AppUser = {
   id: string;
   login_id: string;
+  /**
+   * NOTE:
+   *  従来は bcrypt のハッシュを入れていたが、
+   *  現在は「平文パスワード」をそのまま格納する運用にする。
+   */
   password_hash: string;
   role: "worker" | "manager" | "admin" | string;
   name: string;
@@ -78,13 +83,17 @@ function getSheetsClient() {
   const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
 
   if (!clientEmail || !privateKey || !spreadsheetId) {
-    console.error('[DEBUG sheets] Missing environment variables:', {
+    console.error("[DEBUG sheets] Missing environment variables:", {
       hasEmail: !!clientEmail,
       hasKey: !!privateKey,
       hasSpreadsheetId: !!spreadsheetId,
-      envKeys: Object.keys(process.env).filter(k => k.includes('GOOGLE') || k.includes('SHEETS')),
+      envKeys: Object.keys(process.env).filter(
+        (k) => k.includes("GOOGLE") || k.includes("SHEETS")
+      ),
     });
-    throw new Error("Google Sheets の環境変数が不足しています。.env.local に以下を設定してください: GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, GOOGLE_SHEETS_SPREADSHEET_ID");
+    throw new Error(
+      "Google Sheets の環境変数が不足しています。.env.local に以下を設定してください: GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, GOOGLE_SHEETS_SPREADSHEET_ID"
+    );
   }
 
   const auth = new google.auth.JWT({
@@ -98,7 +107,9 @@ function getSheetsClient() {
   return { sheets, spreadsheetId };
 }
 
-export async function getUserByLoginId(login_id: string): Promise<AppUser | null> {
+export async function getUserByLoginId(
+  login_id: string
+): Promise<AppUser | null> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "Users!A1:G1000";
 
@@ -109,14 +120,14 @@ export async function getUserByLoginId(login_id: string): Promise<AppUser | null
 
   const rows = res.data.values;
   if (!rows || rows.length < 2) {
-    console.log('[DEBUG sheets] No rows found in Users sheet');
+    console.log("[DEBUG sheets] No rows found in Users sheet");
     return null;
   }
 
   const header = rows[0];
   const dataRows = rows.slice(1);
 
-  console.log('[DEBUG sheets] Header:', header);
+  console.log("[DEBUG sheets] Header:", header);
 
   const colIndex = (name: string) => header.indexOf(name);
 
@@ -136,7 +147,7 @@ export async function getUserByLoginId(login_id: string): Promise<AppUser | null
     idxName === -1 ||
     idxActive === -1
   ) {
-    console.error('[DEBUG sheets] Column index error:', {
+    console.error("[DEBUG sheets] Column index error:", {
       idxId,
       idxLoginId,
       idxPassword,
@@ -149,11 +160,14 @@ export async function getUserByLoginId(login_id: string): Promise<AppUser | null
   }
 
   const row = dataRows.find((r) => r[idxLoginId] === login_id);
-  console.log('[DEBUG sheets] Looking for login_id:', login_id);
-  console.log('[DEBUG sheets] Found row:', row ? { ...row } : null);
+  console.log("[DEBUG sheets] Looking for login_id:", login_id);
+  console.log(
+    "[DEBUG sheets] Found row:",
+    row ? { ...row } : null
+  );
 
   if (!row) {
-    console.log('[DEBUG sheets] No matching row found');
+    console.log("[DEBUG sheets] No matching row found");
     return null;
   }
 
@@ -163,16 +177,17 @@ export async function getUserByLoginId(login_id: string): Promise<AppUser | null
     String(activeRaw) === "1" ||
     String(activeRaw) === "TRUE";
 
-  console.log('[DEBUG sheets] Active check:', { activeRaw, isActive });
+  console.log("[DEBUG sheets] Active check:", { activeRaw, isActive });
 
   if (!isActive) {
-    console.log('[DEBUG sheets] User is not active');
+    console.log("[DEBUG sheets] User is not active");
     return null;
   }
 
   const user: AppUser = {
     id: String(row[idxId]),
     login_id: String(row[idxLoginId]),
+    // ★ ここに「平文パスワード」をそのまま入れておく
     password_hash: String(row[idxPassword] ?? ""),
     role: String(row[idxRole] ?? "worker"),
     name: String(row[idxName] ?? ""),
@@ -180,7 +195,10 @@ export async function getUserByLoginId(login_id: string): Promise<AppUser | null
     active: isActive,
   };
 
-  console.log('[DEBUG sheets] Returning user:', { ...user, password_hash: '***' });
+  console.log("[DEBUG sheets] Returning user:", {
+    ...user,
+    password_hash: "***",
+  });
   return user;
 }
 
@@ -208,8 +226,11 @@ export async function getItems(): Promise<InventoryItem[]> {
     item_name: String(row[colIndex("item_name")] || ""),
     category: String(row[colIndex("category")] || ""),
     unit: String(row[colIndex("unit")] || ""),
-    created_at: row[colIndex("created_at")] ? String(row[colIndex("created_at")]) : undefined,
-    new_flag: String(row[colIndex("new_flag")] || "").toLowerCase() === "true",
+    created_at: row[colIndex("created_at")]
+      ? String(row[colIndex("created_at")])
+      : undefined,
+    new_flag:
+      String(row[colIndex("new_flag")] || "").toLowerCase() === "true",
   }));
 
   return items;
@@ -239,14 +260,25 @@ export async function getTransactions(): Promise<Transaction[]> {
     item_name: String(row[colIndex("item_name")] || ""),
     type: (row[colIndex("type")] as "IN" | "OUT") || "IN",
     qty: Number(row[colIndex("qty")] || 0),
-    reason: row[colIndex("reason")] ? String(row[colIndex("reason")]) : undefined,
+    reason: row[colIndex("reason")]
+      ? String(row[colIndex("reason")])
+      : undefined,
     user_id: String(row[colIndex("user_id")] || ""),
     user_name: String(row[colIndex("user_name")] || ""),
     area: String(row[colIndex("area")] || ""),
     date: String(row[colIndex("date")] || ""),
-    status: (row[colIndex("status")] as "draft" | "pending" | "approved" | "locked") || "draft",
-    approved_by: row[colIndex("approved_by")] ? String(row[colIndex("approved_by")]) : undefined,
-    approved_at: row[colIndex("approved_at")] ? String(row[colIndex("approved_at")]) : undefined,
+    status:
+      (row[colIndex("status")] as
+        | "draft"
+        | "pending"
+        | "approved"
+        | "locked") || "draft",
+    approved_by: row[colIndex("approved_by")]
+      ? String(row[colIndex("approved_by")])
+      : undefined,
+    approved_at: row[colIndex("approved_at")]
+      ? String(row[colIndex("approved_at")])
+      : undefined,
   }));
 
   return transactions;
@@ -255,26 +287,30 @@ export async function getTransactions(): Promise<Transaction[]> {
 /**
  * 新規トランザクションを追加
  */
-export async function addTransaction(transaction: Omit<Transaction, 'id'>): Promise<string> {
+export async function addTransaction(
+  transaction: Omit<Transaction, "id">
+): Promise<string> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "Transactions!A1";
 
   const id = `TRX_${Date.now()}`;
-  const values = [[
-    id,
-    transaction.item_code,
-    transaction.item_name,
-    transaction.type,
-    transaction.qty,
-    transaction.reason || "",
-    transaction.user_id,
-    transaction.user_name,
-    transaction.area,
-    transaction.date,
-    transaction.status,
-    transaction.approved_by || "",
-    transaction.approved_at || "",
-  ]];
+  const values = [
+    [
+      id,
+      transaction.item_code,
+      transaction.item_name,
+      transaction.type,
+      transaction.qty,
+      transaction.reason || "",
+      transaction.user_id,
+      transaction.user_name,
+      transaction.area,
+      transaction.date,
+      transaction.status,
+      transaction.approved_by || "",
+      transaction.approved_at || "",
+    ],
+  ];
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
@@ -315,7 +351,8 @@ export async function getPhysicalCounts(): Promise<PhysicalCount[]> {
     user_id: String(row[colIndex("user_id")] || ""),
     user_name: String(row[colIndex("user_name")] || ""),
     location: String(row[colIndex("location")] || ""),
-    status: (row[colIndex("status")] as "draft" | "confirmed") || "draft",
+    status:
+      (row[colIndex("status")] as "draft" | "confirmed") || "draft",
   }));
 
   return counts;
@@ -324,24 +361,28 @@ export async function getPhysicalCounts(): Promise<PhysicalCount[]> {
 /**
  * 新規棚卸データを追加
  */
-export async function addPhysicalCount(count: Omit<PhysicalCount, 'id'>): Promise<string> {
+export async function addPhysicalCount(
+  count: Omit<PhysicalCount, "id">
+): Promise<string> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "PhysicalCount!A1";
 
   const id = `PC_${Date.now()}`;
-  const values = [[
-    id,
-    count.date,
-    count.item_code,
-    count.item_name,
-    count.expected_qty,
-    count.actual_qty,
-    count.difference,
-    count.user_id,
-    count.user_name,
-    count.location,
-    count.status,
-  ]];
+  const values = [
+    [
+      id,
+      count.date,
+      count.item_code,
+      count.item_name,
+      count.expected_qty,
+      count.actual_qty,
+      count.difference,
+      count.user_id,
+      count.user_name,
+      count.location,
+      count.status,
+    ],
+  ];
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
@@ -356,22 +397,26 @@ export async function addPhysicalCount(count: Omit<PhysicalCount, 'id'>): Promis
 /**
  * 差異ログを追加
  */
-export async function addDiffLog(log: Omit<DiffLog, 'id'>): Promise<string> {
+export async function addDiffLog(
+  log: Omit<DiffLog, "id">
+): Promise<string> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "DiffLog!A1";
 
   const id = `DIFF_${Date.now()}`;
-  const values = [[
-    id,
-    log.physical_count_id,
-    log.item_code,
-    log.item_name,
-    log.expected_qty,
-    log.actual_qty,
-    log.diff,
-    log.reason || "",
-    log.status,
-  ]];
+  const values = [
+    [
+      id,
+      log.physical_count_id,
+      log.item_code,
+      log.item_name,
+      log.expected_qty,
+      log.actual_qty,
+      log.diff,
+      log.reason || "",
+      log.status,
+    ],
+  ];
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
@@ -412,7 +457,11 @@ export async function updateTransactionStatus(
   const approvedByIdx = colIndex("approved_by");
   const approvedAtIdx = colIndex("approved_at");
 
-  const updateRange = `Transactions!${String.fromCharCode(65 + statusIdx)}${rowIndex + 1}:${String.fromCharCode(65 + approvedAtIdx)}${rowIndex + 1}`;
+  const updateRange = `Transactions!${String.fromCharCode(
+    65 + statusIdx
+  )}${rowIndex + 1}:${String.fromCharCode(
+    65 + approvedAtIdx
+  )}${rowIndex + 1}`;
   const values = [[status, approved_by || "", approved_at || ""]];
 
   await sheets.spreadsheets.values.update({
@@ -481,7 +530,9 @@ export async function getTransactionsByStatus(
 /**
  * アイテムコードから商品を検索
  */
-export async function searchItems(query: string): Promise<InventoryItem[]> {
+export async function searchItems(
+  query: string
+): Promise<InventoryItem[]> {
   const items = await getItems();
   const q = query.toLowerCase();
   return items.filter(
@@ -494,7 +545,9 @@ export async function searchItems(query: string): Promise<InventoryItem[]> {
 /**
  * コードから1件の商品を取得
  */
-export async function getItemByCode(item_code: string): Promise<InventoryItem | null> {
+export async function getItemByCode(
+  item_code: string
+): Promise<InventoryItem | null> {
   const items = await getItems();
   return items.find((item) => item.item_code === item_code) || null;
 }
@@ -502,20 +555,24 @@ export async function getItemByCode(item_code: string): Promise<InventoryItem | 
 /**
  * 新規商品を追加
  */
-export async function addItem(item: Omit<InventoryItem, 'id'>): Promise<string> {
+export async function addItem(
+  item: Omit<InventoryItem, "id">
+): Promise<string> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "Items!A1";
 
   const id = `ITEM_${Date.now()}`;
-  const values = [[
-    id,
-    item.item_code,
-    item.item_name,
-    item.category,
-    item.unit,
-    item.created_at || "",
-    item.new_flag ? "true" : "false",
-  ]];
+  const values = [
+    [
+      id,
+      item.item_code,
+      item.item_name,
+      item.category,
+      item.unit,
+      item.created_at || "",
+      item.new_flag ? "true" : "false",
+    ],
+  ];
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
@@ -545,7 +602,8 @@ export async function getUsers(): Promise<AppUser[]> {
   const header = rows[0];
   const colIndex = (name: string) => header.indexOf(name);
 
-  const users = rows.slice(1)
+  const users = rows
+    .slice(1)
     .map((row) => {
       const activeRaw = row[colIndex("active")];
       const isActive =
@@ -556,10 +614,13 @@ export async function getUsers(): Promise<AppUser[]> {
       return {
         id: String(row[colIndex("id")] || ""),
         login_id: String(row[colIndex("login_id")] || ""),
+        // ここにも平文パスワードがそのまま入る
         password_hash: String(row[colIndex("password_hash")] || ""),
         role: String(row[colIndex("role")] || "worker"),
         name: String(row[colIndex("name")] || ""),
-        area: row[colIndex("area")] ? String(row[colIndex("area")]) : undefined,
+        area: row[colIndex("area")]
+          ? String(row[colIndex("area")])
+          : undefined,
         active: isActive,
       };
     })
@@ -588,14 +649,20 @@ export async function getDiffLogs(): Promise<DiffLog[]> {
 
   const logs = rows.slice(1).map((row) => ({
     id: String(row[colIndex("id")] || ""),
-    physical_count_id: String(row[colIndex("physical_count_id")] || ""),
+    physical_count_id: String(
+      row[colIndex("physical_count_id")] || ""
+    ),
     item_code: String(row[colIndex("item_code")] || ""),
     item_name: String(row[colIndex("item_name")] || ""),
     expected_qty: Number(row[colIndex("expected_qty")] || 0),
     actual_qty: Number(row[colIndex("actual_qty")] || 0),
     diff: Number(row[colIndex("diff")] || 0),
-    reason: row[colIndex("reason")] ? String(row[colIndex("reason")]) : undefined,
-    status: (row[colIndex("status")] as "pending" | "approved" | "locked") || "pending",
+    reason: row[colIndex("reason")]
+      ? String(row[colIndex("reason")])
+      : undefined,
+    status:
+      (row[colIndex("status")] as "pending" | "approved" | "locked") ||
+      "pending",
   }));
 
   return logs;
@@ -604,19 +671,23 @@ export async function getDiffLogs(): Promise<DiffLog[]> {
 /**
  * サプライヤーレポートを追加
  */
-export async function addSupplierReport(report: Omit<SupplierReport, 'id'>): Promise<string> {
+export async function addSupplierReport(
+  report: Omit<SupplierReport, "id">
+): Promise<string> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "SupplierReports!A1";
 
   const id = `SR_${Date.now()}`;
-  const values = [[
-    id,
-    report.month,
-    report.item_code,
-    report.item_name,
-    report.qty,
-    report.is_new_item ? "true" : "false",
-  ]];
+  const values = [
+    [
+      id,
+      report.month,
+      report.item_code,
+      report.item_name,
+      report.qty,
+      report.is_new_item ? "true" : "false",
+    ],
+  ];
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
@@ -626,4 +697,52 @@ export async function addSupplierReport(report: Omit<SupplierReport, 'id'>): Pro
   });
 
   return id;
+}
+
+/**
+ * ユーザーのパスワードを更新（password_hash 列に平文を書き込む）
+ */
+export async function updateUserPassword(
+  loginId: string,
+  newPassword: string
+): Promise<void> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "Users!A1:G1000";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) {
+    throw new Error("Users シートにデータがありません");
+  }
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+
+  const loginIdx = colIndex("login_id");
+  const passwordIdx = colIndex("password_hash");
+
+  if (loginIdx === -1 || passwordIdx === -1) {
+    throw new Error("Users シートのヘッダが想定と異なります");
+  }
+
+  const rowIndex = rows.findIndex((r) => r[loginIdx] === loginId);
+  if (rowIndex === -1) {
+    throw new Error(`User not found for login_id: ${loginId}`);
+  }
+
+  const columnLetter = String.fromCharCode(65 + passwordIdx); // A=0
+  const targetRange = `Users!${columnLetter}${rowIndex + 1}`;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: targetRange,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[newPassword]],
+    },
+  });
 }
