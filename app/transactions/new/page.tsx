@@ -3,6 +3,12 @@
 import React, { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import {
+  ITEM_GROUP_LABELS,
+  type ItemGroupKey,
+  isItemGroupKey,
+  resolveGroupFromInitial,
+} from '@/lib/itemGroups';
 
 const WAREHOUSE_OPTIONS = ['箕面', '茨木', '八尾'] as const;
 const TRANSACTION_TYPE_OPTIONS = [
@@ -10,27 +16,26 @@ const TRANSACTION_TYPE_OPTIONS = [
   { value: 'OUT', label: '出庫' },
 ] as const;
 
-const ITEM_GROUPS = [
-  'すべて',
-  'SAD',
-  'BU',
-  'CA',
-  'FR',
-  'EG',
-  'CF',
-  'MA',
-  'その他',
-] as const;
-
 type WarehouseOption = (typeof WAREHOUSE_OPTIONS)[number];
 type TransactionType = (typeof TRANSACTION_TYPE_OPTIONS)[number]['value'];
-type ItemGroup = (typeof ITEM_GROUPS)[number];
 
 type ItemCandidate = {
   item_code: string;
   item_name: string;
-  initial_group?: string;
+  group: ItemGroupKey;
 };
+
+const GROUP_BUTTONS: { key: ItemGroupKey; label: string }[] = [
+  { key: 'ALL', label: ITEM_GROUP_LABELS.ALL },
+  { key: 'SAD', label: ITEM_GROUP_LABELS.SAD },
+  { key: 'BU', label: ITEM_GROUP_LABELS.BU },
+  { key: 'CA', label: ITEM_GROUP_LABELS.CA },
+  { key: 'FR', label: ITEM_GROUP_LABELS.FR },
+  { key: 'EG', label: ITEM_GROUP_LABELS.EG },
+  { key: 'CF', label: ITEM_GROUP_LABELS.CF },
+  { key: 'MA', label: ITEM_GROUP_LABELS.MA },
+  { key: 'OTHER', label: ITEM_GROUP_LABELS.OTHER },
+];
 
 interface TransactionFormState {
   date: string;
@@ -45,13 +50,13 @@ interface TransactionFormState {
 
 interface TransactionRequestPayload {
   date: string;
-  base: string;
-  location: string;
-  itemName: string;
-  itemCode?: string;
-  quantity: number;
-  transactionType: TransactionType;
-  memo?: string;
+  base?: string;
+  location?: string;
+  item_code: string;
+  item_name: string;
+  qty: number;
+  type: TransactionType;
+  reason?: string;
 }
 
 const createInitialState = (): TransactionFormState => ({
@@ -76,7 +81,7 @@ export default function NewTransactionPage() {
   const { data: session, status } = useSession();
 
   const [form, setForm] = useState<TransactionFormState>(() => createInitialState());
-  const [itemGroup, setItemGroup] = useState<ItemGroup>('すべて');
+  const [itemGroup, setItemGroup] = useState<ItemGroupKey>('ALL');
   const [itemQuery, setItemQuery] = useState('');
   const [debouncedItemQuery, setDebouncedItemQuery] = useState('');
   const [itemCandidates, setItemCandidates] = useState<ItemCandidate[]>([]);
@@ -153,11 +158,7 @@ export default function NewTransactionPage() {
         });
 
         setItemQuery(tx.item_name);
-        setItemGroup(
-          (tx.initial_group as ItemGroup) && ITEM_GROUPS.includes(tx.initial_group as ItemGroup)
-            ? (tx.initial_group as ItemGroup)
-            : 'すべて',
-        );
+        setItemGroup(resolveGroupFromInitial(tx.initial_group));
 
         setIsEditMode(true);
       } catch (error) {
@@ -173,13 +174,6 @@ export default function NewTransactionPage() {
 
   // 品目サジェスト取得
   useEffect(() => {
-    // 条件が何もない場合はサジェストを出さない
-    if (!debouncedItemQuery && itemGroup === 'すべて') {
-      setItemCandidates([]);
-      setShowItemDropdown(false);
-      return;
-    }
-
     let cancelled = false;
 
     const fetchSuggestions = async () => {
@@ -187,11 +181,9 @@ export default function NewTransactionPage() {
         setIsLoadingItems(true);
 
         const params = new URLSearchParams();
+        params.set('group', itemGroup);
         if (debouncedItemQuery) {
           params.set('q', debouncedItemQuery);
-        }
-        if (itemGroup && itemGroup !== 'すべて') {
-          params.set('group', itemGroup);
         }
 
         const res = await fetch(`/api/items/search?${params.toString()}`);
@@ -200,35 +192,22 @@ export default function NewTransactionPage() {
         }
 
         const data = await res.json();
+        console.log('[items/search client]', data);
         if (cancelled) return;
 
-        const raw = (data?.data ?? data?.items ?? data) as unknown;
+        const raw = (data?.items ?? data?.data ?? data) as unknown;
         const arr = Array.isArray(raw) ? raw : [];
 
         const mapped: ItemCandidate[] = arr
           .map((row: any) => ({
             item_code: normalize(row.item_code),
             item_name: normalize(row.item_name),
-            initial_group: row.initial_group ? normalize(row.initial_group) : undefined,
+            group: isItemGroupKey(row.group) ? row.group : 'OTHER',
           }))
           .filter((row) => row.item_code && row.item_name);
 
-        const filtered = mapped.filter((row) => {
-          const name = row.item_name.toLowerCase();
-          const code = row.item_code.toLowerCase();
-          const q = debouncedItemQuery.toLowerCase();
-
-          const matchKeyword = !debouncedItemQuery || name.includes(q) || code.includes(q);
-          const matchGroup =
-            itemGroup === 'すべて' ||
-            row.initial_group === itemGroup ||
-            (!row.initial_group && itemGroup === 'その他');
-
-          return matchKeyword && matchGroup;
-        });
-
-        setItemCandidates(filtered);
-        setShowItemDropdown(filtered.length > 0);
+        setItemCandidates(mapped);
+        setShowItemDropdown(mapped.length > 0);
       } catch (error) {
         console.error('Failed to fetch item suggestions', error);
         if (!cancelled) {
@@ -289,21 +268,27 @@ export default function NewTransactionPage() {
       return;
     }
 
+    if (!form.itemCode.trim()) {
+      setSubmitError('品目候補を選択してください');
+      return;
+    }
+
     const qty = Number(form.quantity);
     if (!Number.isFinite(qty) || qty === 0) {
       setSubmitError('数量は0以外の数値を入力してください');
       return;
     }
 
+    const normalizedType: TransactionType = qty > 0 ? 'IN' : 'OUT';
     const payload: TransactionRequestPayload = {
       date: form.date,
       base: form.base,
-      location: form.location.trim(),
-      itemName: form.itemName.trim(),
-      itemCode: form.itemCode.trim() || undefined,
-      quantity: qty,
-      transactionType: form.transactionType,
-      memo: form.memo.trim() || undefined,
+      location: form.location.trim() || undefined,
+      item_code: form.itemCode.trim(),
+      item_name: form.itemName.trim(),
+      qty: Math.abs(qty),
+      type: normalizedType,
+      reason: form.memo.trim() || undefined,
     };
 
     setIsSubmitting(true);
@@ -333,7 +318,7 @@ export default function NewTransactionPage() {
         setItemQuery('');
         setItemCandidates([]);
         setShowItemDropdown(false);
-        setItemGroup('すべて');
+        setItemGroup('ALL');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '登録に失敗しました';
@@ -412,19 +397,19 @@ export default function NewTransactionPage() {
 
               {/* グループボタン */}
               <div className="mb-2 flex flex-wrap gap-2">
-                {ITEM_GROUPS.map((group) => (
+                {GROUP_BUTTONS.map((group) => (
                   <button
-                    key={group}
+                    key={group.key}
                     type="button"
-                    onClick={() => setItemGroup(group)}
+                    onClick={() => setItemGroup(group.key)}
                     className={`rounded px-3 py-1 text-xs font-medium border ${
-                      itemGroup === group
+                      itemGroup === group.key
                         ? 'border-blue-500 bg-blue-50 text-blue-600'
                         : 'border-gray-300 bg-white text-gray-700'
                     }`}
                     disabled={isFormDisabled}
                   >
-                    {group}
+                    {group.label}
                   </button>
                 ))}
               </div>
@@ -486,7 +471,21 @@ export default function NewTransactionPage() {
                 id="quantity"
                 type="number"
                 value={form.quantity}
-                onChange={(event) => handleFieldChange('quantity')(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  const qtyNumber = Number(value);
+
+                  setForm((prev) => ({
+                    ...prev,
+                    quantity: value,
+                    transactionType:
+                      !Number.isNaN(qtyNumber) && qtyNumber !== 0
+                        ? qtyNumber > 0
+                          ? 'IN'
+                          : 'OUT'
+                        : prev.transactionType,
+                  }));
+                }}
                 placeholder="例：10 または -3"
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 step="1"
@@ -557,7 +556,7 @@ export default function NewTransactionPage() {
                     setItemQuery('');
                     setItemCandidates([]);
                     setShowItemDropdown(false);
-                    setItemGroup('すべて');
+        setItemGroup('ALL');
                     setSubmitError(null);
                   }}
                   disabled={isSubmitting || isFormDisabled}
