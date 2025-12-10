@@ -58,18 +58,18 @@ export default function StockPage() {
             <div className="px-6 py-8 text-center text-gray-500">在庫情報がありません</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full text-gray-900">
                 <thead className="bg-gray-100 border-b">
                   <tr>
                     <th className="text-left px-6 py-3 font-medium">品目コード</th>
                     <th className="text-left px-6 py-3 font-medium">品目名</th>
-                    <th className="text-center px-6 py-3 font-medium">期首</th>
+                    <th className="text-center px-6 py-3 font-medium">月初在庫</th>
                     <th className="text-center px-6 py-3 font-medium">入庫</th>
                     <th className="text-center px-6 py-3 font-medium">出庫</th>
-                    <th className="text-center px-6 py-3 font-medium">期末</th>
+                    <th className="text-center px-6 py-3 font-medium">月末在庫</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="text-gray-900">
                   {stocks.map((stock, idx) => (
                     <tr key={idx} className="border-b hover:bg-gray-50">
                       <td className="px-6 py-3 flex items-center gap-2">

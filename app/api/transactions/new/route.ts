@@ -13,26 +13,61 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { type, date, item_code, item_name, qty, reason, is_new_item } = body;
+
+    const rawType = body.type ?? body.transactionType;
+    const rawItemCode = body.item_code ?? body.itemCode;
+    const rawItemName = body.item_name ?? body.itemName;
+    const rawQty = body.qty ?? body.quantity;
+    const rawReason = body.reason ?? body.memo;
+    const isNewItem = Boolean(body.is_new_item);
+
+    const date = body.date ? String(body.date) : '';
+    const item_code = rawItemCode ? String(rawItemCode).trim() : '';
+    const item_name = rawItemName ? String(rawItemName).trim() : '';
+
+    const parsedQty = Number(rawQty);
+    const qty = Number.isFinite(parsedQty) ? Math.abs(parsedQty) : NaN;
+    const normalizedType = (() => {
+      const upper = rawType ? String(rawType).toUpperCase() : undefined;
+      if (upper === 'IN' || upper === 'OUT') return upper;
+      if (Number.isFinite(parsedQty) && parsedQty !== 0) {
+        return parsedQty > 0 ? 'IN' : 'OUT';
+      }
+      return undefined;
+    })();
+    const reason = rawReason ? String(rawReason) : '';
 
     // バリデーション
-    if (!type || !date || !item_code || qty === undefined || qty === null) {
+    if (!date) {
+      return NextResponse.json({ success: false, error: 'date is required' }, { status: 400 });
+    }
+    if (!item_code) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
+        { success: false, error: 'item_code is required' },
         { status: 400 },
       );
     }
-
-    const parsedQty = parseInt(String(qty), 10);
-    if (isNaN(parsedQty) || parsedQty <= 0) {
+    if (!item_name) {
       return NextResponse.json(
-        { success: false, error: 'Invalid quantity' },
+        { success: false, error: 'item_name is required' },
+        { status: 400 },
+      );
+    }
+    if (!normalizedType) {
+      return NextResponse.json(
+        { success: false, error: 'type is required (IN or OUT)' },
+        { status: 400 },
+      );
+    }
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return NextResponse.json(
+        { success: false, error: 'qty must be a non-zero number' },
         { status: 400 },
       );
     }
 
     // 新規品目の場合、Items に追加
-    if (is_new_item) {
+    if (isNewItem) {
       if (!item_name) {
         return NextResponse.json(
           { success: false, error: 'Item name is required for new items' },
@@ -56,10 +91,14 @@ export async function POST(request: NextRequest) {
     // 入出庫取引を追加
     const transaction: Omit<Transaction, 'id'> = {
       item_code,
-      item_name: item_name || '',
-      type: type as 'IN' | 'OUT',
-      qty: parsedQty,
-      reason: reason || '',
+      item_name,
+      type: normalizedType,
+      qty,
+      detail: reason,
+      reason,
+      location_index: Number.isFinite(Number(body.location))
+        ? Number(body.location)
+        : undefined,
       user_id: (session.user as any).id,
       user_name: (session.user as any).name,
       area: (session.user as any).area || '',
