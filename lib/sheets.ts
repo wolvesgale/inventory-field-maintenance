@@ -24,6 +24,7 @@ export type InventoryItem = {
   unit: string;
   created_at?: string;
   new_flag?: boolean;
+  initial_group?: string;
 };
 
 export type Transaction = {
@@ -220,18 +221,71 @@ export async function getItems(): Promise<InventoryItem[]> {
   const header = rows[0];
   const colIndex = (name: string) => header.indexOf(name);
 
-  const items = rows.slice(1).map((row) => ({
-    id: String(row[colIndex("id")] || ""),
-    item_code: String(row[colIndex("item_code")] || ""),
-    item_name: String(row[colIndex("item_name")] || ""),
-    category: String(row[colIndex("category")] || ""),
-    unit: String(row[colIndex("unit")] || ""),
-    created_at: row[colIndex("created_at")]
-      ? String(row[colIndex("created_at")])
-      : undefined,
-    new_flag:
-      String(row[colIndex("new_flag")] || "").toLowerCase() === "true",
+  const idxId = colIndex("id");
+  const idxItemCode = colIndex("item_code");
+  const idxItemName = colIndex("item_name");
+  const idxCategory = colIndex("category");
+  const idxUnit = colIndex("unit");
+  const idxCreatedAt = colIndex("created_at");
+  const idxNewFlag = colIndex("new_flag");
+  const idxInitialGroup = colIndex("initial_group");
+
+  let items = rows.slice(1).map((row) => ({
+    id: String(row[idxId] || ""),
+    item_code: String(row[idxItemCode] || ""),
+    item_name: String(row[idxItemName] || ""),
+    category: String(row[idxCategory] || ""),
+    unit: String(row[idxUnit] || ""),
+    created_at: row[idxCreatedAt] ? String(row[idxCreatedAt]) : undefined,
+    new_flag: String(row[idxNewFlag] || "").toLowerCase() === "true",
+    initial_group: idxInitialGroup >= 0 ? String(row[idxInitialGroup] || "") : undefined,
   }));
+
+  if (items.some((item) => !item.initial_group)) {
+    const { values: ledgerValues } = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: "StockLedger!A1:H1000",
+    });
+
+    const ledgerRows = ledgerValues || [];
+    if (ledgerRows.length >= 2) {
+      const ledgerHeader = ledgerRows[0];
+      const ledgerColIndex = (name: string) => ledgerHeader.indexOf(name);
+
+      const idxLedgerCode = ledgerColIndex("item_code");
+      const idxLedgerName = ledgerColIndex("item_name");
+      const idxLedgerInitial = ledgerColIndex("initial_group");
+
+      const ledgerMap = new Map<
+        string,
+        { initial_group?: string; item_name?: string }
+      >();
+
+      ledgerRows.slice(1).forEach((row) => {
+        const code = idxLedgerCode >= 0 ? String(row[idxLedgerCode] || "") : "";
+        if (!code) return;
+
+        ledgerMap.set(code, {
+          initial_group:
+            idxLedgerInitial >= 0 ? String(row[idxLedgerInitial] || "") : undefined,
+          item_name: idxLedgerName >= 0 ? String(row[idxLedgerName] || "") : undefined,
+        });
+      });
+
+      items = items.map((item) => {
+        if (item.initial_group) return item;
+
+        const fallback = ledgerMap.get(item.item_code);
+        if (!fallback) return item;
+
+        return {
+          ...item,
+          item_name: item.item_name || fallback.item_name || "",
+          initial_group: fallback.initial_group || undefined,
+        };
+      });
+    }
+  }
 
   return items;
 }
