@@ -296,6 +296,52 @@ export async function getItems(): Promise<InventoryItem[]> {
     }
   }
 
+  if (items.some((item) => !item.initial_group)) {
+    const { values: ledgerValues } = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: "StockLedger!A1:H1000",
+    });
+
+    const ledgerRows = ledgerValues || [];
+    if (ledgerRows.length >= 2) {
+      const ledgerHeader = ledgerRows[0];
+      const ledgerColIndex = (name: string) => ledgerHeader.indexOf(name);
+
+      const idxLedgerCode = ledgerColIndex("item_code");
+      const idxLedgerName = ledgerColIndex("item_name");
+      const idxLedgerInitial = ledgerColIndex("initial_group");
+
+      const ledgerMap = new Map<
+        string,
+        { initial_group?: string; item_name?: string }
+      >();
+
+      ledgerRows.slice(1).forEach((row) => {
+        const code = idxLedgerCode >= 0 ? String(row[idxLedgerCode] || "") : "";
+        if (!code) return;
+
+        ledgerMap.set(code, {
+          initial_group:
+            idxLedgerInitial >= 0 ? String(row[idxLedgerInitial] || "") : undefined,
+          item_name: idxLedgerName >= 0 ? String(row[idxLedgerName] || "") : undefined,
+        });
+      });
+
+      items = items.map((item) => {
+        if (item.initial_group) return item;
+
+        const fallback = ledgerMap.get(item.item_code);
+        if (!fallback) return item;
+
+        return {
+          ...item,
+          item_name: item.item_name || fallback.item_name || "",
+          initial_group: fallback.initial_group || undefined,
+        };
+      });
+    }
+  }
+
   return items;
 }
 
