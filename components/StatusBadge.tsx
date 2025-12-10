@@ -1,36 +1,52 @@
-/**
- * ステータスバッジコンポーネント
- */
+// components/StatusBadge.tsx
+// This component is intentionally self-contained to avoid external type or utility dependencies.
 
-import { TransactionStatus } from '@/types';
+// Local definition of transaction statuses used throughout the app.
+export type TransactionStatus =
+  | 'draft'
+  | 'pending'
+  | 'approved'
+  | 'returned'
+  | 'locked';
 
-const statusConfig: Record<TransactionStatus, { label: string; color: string }> = {
-  draft: { label: '下書き', color: 'bg-gray-200 text-gray-800' },
-  pending: { label: '承認待ち', color: 'bg-orange-200 text-orange-800' },
-  approved: { label: '承認済み', color: 'bg-green-200 text-green-800' },
-  locked: { label: '締め済み（編集不可）', color: 'bg-gray-400 text-white' },
+const STATUS_CONFIG: Record<TransactionStatus, { label: string; className: string }> = {
+  draft: {
+    label: '下書き',
+    className: 'bg-gray-200 text-gray-800',
+  },
+  pending: {
+    label: '承認待ち',
+    className: 'bg-orange-200 text-orange-800',
+  },
+  approved: {
+    label: '承認済み',
+    className: 'bg-green-200 text-green-800',
+  },
+  returned: {
+    label: '差し戻し',
+    className: 'bg-red-200 text-red-800',
+  },
+  locked: {
+    label: 'ロック',
+    className: 'bg-gray-300 text-gray-700',
+  },
 };
 
-export interface StatusBadgeProps {
+type StatusBadgeProps = {
   status: TransactionStatus;
-  className?: string;
-}
+};
 
-export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
-  const config = statusConfig[status];
+export function StatusBadge({ status }: StatusBadgeProps) {
+  const cfg = STATUS_CONFIG[status];
+  if (!cfg) return null;
 
   return (
-    <span className={`px-2 py-1 rounded text-sm font-medium ${config.color} ${className}`}>
-      {config.label}
+    <span
+      className={`inline-flex items-center rounded px-2 py-1 text-xs font-semibold ${cfg.className}`}
+    >
+      {cfg.label}
     </span>
   );
 }
 
-// 新規品目バッジ
-export function NewItemBadge({ className = '' }: { className?: string }) {
-  return (
-    <span className={`px-2 py-1 rounded text-sm font-bold bg-red-200 text-red-800 ${className}`}>
-      NEW
-    </span>
-  );
-}
+export default StatusBadge;
