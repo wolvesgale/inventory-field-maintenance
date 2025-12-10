@@ -58,7 +58,7 @@ export default function StockPage() {
             <div className="px-6 py-8 text-center text-gray-500">在庫情報がありません</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full text-gray-900">
                 <thead className="bg-gray-100 border-b">
                   <tr>
                     <th className="text-left px-6 py-3 font-medium">品目コード</th>
