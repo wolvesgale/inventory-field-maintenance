@@ -9,6 +9,7 @@ import { useSession } from 'next-auth/react';
 import { Navigation } from '@/components/Navigation';
 import { StatusBadge } from '@/components/StatusBadge';
 import { TransactionView } from '@/types';
+import Link from 'next/link';
 
 export default function TransactionsPage() {
   const { data: session } = useSession();
@@ -65,31 +66,44 @@ export default function TransactionsPage() {
               <table className="w-full">
                 <thead className="bg-gray-100 border-b">
                   <tr>
-                    <th className="text-left px-6 py-3 font-medium">日付</th>
-                    <th className="text-left px-6 py-3 font-medium">種別</th>
-                    <th className="text-left px-6 py-3 font-medium">品目コード</th>
-                    <th className="text-left px-6 py-3 font-medium">数量</th>
-                    <th className="text-left px-6 py-3 font-medium">ステータス</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-900">日付</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-900">種別</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-900">品目コード</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-900">数量</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-900">ステータス</th>
                     {session?.user?.role !== 'worker' && (
-                      <th className="text-left px-6 py-3 font-medium">登録者</th>
+                      <th className="text-left px-6 py-3 font-medium text-gray-900">登録者</th>
                     )}
+                    <th className="text-left px-6 py-3 font-medium text-gray-900">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {transactions.map((tx, idx) => (
-                    <tr key={idx} className="border-b hover:bg-gray-50">
-                      <td className="px-6 py-3">{tx.date}</td>
-                      <td className="px-6 py-3">
+                    <tr key={tx.id || idx} className="border-b hover:bg-gray-50">
+                      <td className="px-6 py-3 text-gray-900">{tx.date}</td>
+                      <td className="px-6 py-3 text-gray-900">
                         {tx.type === 'IN' ? '入荷' : '納品・出庫'}
                       </td>
-                      <td className="px-6 py-3">{tx.item_code}</td>
-                      <td className="px-6 py-3">{tx.qty}</td>
-                      <td className="px-6 py-3">
+                      <td className="px-6 py-3 text-gray-900">{tx.item_code}</td>
+                      <td className="px-6 py-3 text-gray-900">{tx.qty}</td>
+                      <td className="px-6 py-3 text-gray-900">
                         <StatusBadge status={tx.status} />
                       </td>
                       {session?.user?.role !== 'worker' && (
-                        <td className="px-6 py-3">{tx.user_name}</td>
+                        <td className="px-6 py-3 text-gray-900">{tx.user_name}</td>
                       )}
+                      <td className="px-6 py-3 text-gray-900">
+                        {tx.id ? (
+                          <Link
+                            href={`/transactions/${tx.id}`}
+                            className="rounded border border-gray-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50"
+                          >
+                            編集
+                          </Link>
+                        ) : (
+                          <span className="text-sm text-gray-500">-</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

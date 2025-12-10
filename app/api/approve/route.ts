@@ -47,15 +47,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'approve') {
-      const now = new Date().toISOString();
-      await updateTransactionStatus(
-        transactionId,
-        'approved',
-        session.user.id,
-        now.split('T')[0]
-      );
+      await updateTransactionStatus(transactionId, 'approved', session.user.id);
     } else if (action === 'reject') {
-      await updateTransactionStatus(transactionId, 'draft');
+      await updateTransactionStatus(transactionId, 'returned', session.user.id);
     }
 
     return NextResponse.json({
