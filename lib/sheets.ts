@@ -24,7 +24,15 @@ export type InventoryItem = {
   unit: string;
   created_at?: string;
   new_flag?: boolean;
+  initial_group?: string; // 追加: StockLedger のグループをここに入れる
 };
+
+export type TransactionStatus =
+  | "draft"
+  | "pending"
+  | "approved"
+  | "returned"
+  | "locked";
 
 export type Transaction = {
   id: string;
@@ -32,15 +40,32 @@ export type Transaction = {
   item_name: string;
   type: "IN" | "OUT";
   qty: number;
+  detail?: string;
   reason?: string;
-  user_id: string;
-  user_name: string;
+  location_index?: number | null;
+  user_id?: string;
+  user_name?: string;
   area: string;
   date: string;
-  status: "draft" | "pending" | "approved" | "locked";
+  status: TransactionStatus;
   approved_by?: string;
   approved_at?: string;
 };
+
+// Transactions シートの列マッピング（0-based）
+const TRX_COL = {
+  id: 0,
+  itemCode: 1,
+  itemName: 2,
+  type: 3,
+  qty: 4,
+  detail: 5,
+  locationIndex: 6,
+  createdBy: 7,
+  area: 8,
+  date: 9,
+  status: 10,
+} as const;
 
 export type PhysicalCount = {
   id: string;
@@ -207,8 +232,9 @@ export async function getUserByLoginId(
  */
 export async function getItems(): Promise<InventoryItem[]> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const range = "Items!A1:H1000";
+  const range = "Items!A1:Z1000";
 
+  // Items シート読み込み
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range,
@@ -220,18 +246,75 @@ export async function getItems(): Promise<InventoryItem[]> {
   const header = rows[0];
   const colIndex = (name: string) => header.indexOf(name);
 
-  const items = rows.slice(1).map((row) => ({
-    id: String(row[colIndex("id")] || ""),
-    item_code: String(row[colIndex("item_code")] || ""),
-    item_name: String(row[colIndex("item_name")] || ""),
-    category: String(row[colIndex("category")] || ""),
-    unit: String(row[colIndex("unit")] || ""),
-    created_at: row[colIndex("created_at")]
-      ? String(row[colIndex("created_at")])
-      : undefined,
-    new_flag:
-      String(row[colIndex("new_flag")] || "").toLowerCase() === "true",
-  }));
+  const idxId = colIndex("id");
+  const idxItemCode = colIndex("item_code");
+  const idxItemName = colIndex("item_name");
+  const idxCategory = colIndex("category");
+  const idxUnit = colIndex("unit");
+  const idxCreatedAt = colIndex("created_at");
+  const idxNewFlag = colIndex("new_flag");
+  const idxInitialGroup = colIndex("initial_group");
+
+  let items: InventoryItem[] = rows
+    .slice(1)
+    .map((row) => ({
+      id: String(row[idxId] || ""),
+      item_code: String(row[idxItemCode] || ""),
+      item_name: String(row[idxItemName] || ""),
+      category: String(row[idxCategory] || ""),
+      unit: String(row[idxUnit] || ""),
+      created_at:
+        idxCreatedAt >= 0 && row[idxCreatedAt]
+          ? String(row[idxCreatedAt])
+          : undefined,
+      new_flag:
+        idxNewFlag >= 0
+          ? String(row[idxNewFlag] || "").toLowerCase() === "true"
+          : undefined,
+      initial_group:
+        idxInitialGroup >= 0 && row[idxInitialGroup]
+          ? String(row[idxInitialGroup]).trim()
+          : undefined,
+    }))
+    .filter((item) => item.item_code);
+
+  // 🔁 StockLedger から initial_group を補完
+  if (items.some((item) => !item.initial_group)) {
+    const ledgerRes = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: "StockLedger!A1:H1000",
+    });
+
+    const ledgerRows = ledgerRes.data.values || [];
+    if (ledgerRows.length >= 2) {
+      const ledgerHeader = ledgerRows[0];
+      const ledgerColIndex = (name: string) => ledgerHeader.indexOf(name);
+
+      const idxLedgerItemCode = ledgerColIndex("item_code");
+      const idxLedgerInitialGroup = ledgerColIndex("initial_group");
+
+      if (idxLedgerItemCode !== -1 && idxLedgerInitialGroup !== -1) {
+        const ledgerMap = new Map<string, string>();
+
+        for (const row of ledgerRows.slice(1)) {
+          const code = String(row[idxLedgerItemCode] || "").trim();
+          const group = String(row[idxLedgerInitialGroup] || "").trim();
+          if (code && group && !ledgerMap.has(code)) {
+            ledgerMap.set(code, group);
+          }
+        }
+
+        items = items.map((item) => {
+          if (item.initial_group && item.initial_group.trim() !== "") {
+            return item;
+          }
+
+          const fallback = ledgerMap.get(item.item_code);
+          return fallback ? { ...item, initial_group: fallback } : item;
+        });
+      }
+    }
+  }
 
   return items;
 }
@@ -239,9 +322,38 @@ export async function getItems(): Promise<InventoryItem[]> {
 /**
  * 全トランザクションを取得
  */
+function rowToTransaction(row: string[]): Transaction | null {
+  if (!row[TRX_COL.id]) return null;
+
+  const qtyRaw = Number(row[TRX_COL.qty] ?? 0);
+  const qty = Number.isFinite(qtyRaw) ? qtyRaw : 0;
+  const locationRaw = row[TRX_COL.locationIndex];
+  const locationIndex = locationRaw ? Number(locationRaw) : null;
+  const detail = row[TRX_COL.detail] ?? "";
+  const status = (row[TRX_COL.status] as TransactionStatus) || "draft";
+
+  return {
+    id: String(row[TRX_COL.id]),
+    item_code: String(row[TRX_COL.itemCode] ?? ""),
+    item_name: String(row[TRX_COL.itemName] ?? ""),
+    type: (row[TRX_COL.type] as Transaction["type"]) || "IN",
+    qty,
+    detail,
+    reason: detail,
+    location_index: Number.isFinite(locationIndex as number)
+      ? locationIndex
+      : null,
+    user_id: row[TRX_COL.createdBy] ?? "",
+    user_name: row[TRX_COL.createdBy] ?? "",
+    area: row[TRX_COL.area] ?? "",
+    date: row[TRX_COL.date] ?? "",
+    status,
+  };
+}
+
 export async function getTransactions(): Promise<Transaction[]> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const range = "Transactions!A1:N1000";
+  const range = "Transactions!A1:K1000";
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -251,37 +363,20 @@ export async function getTransactions(): Promise<Transaction[]> {
   const rows = res.data.values || [];
   if (rows.length < 2) return [];
 
-  const header = rows[0];
-  const colIndex = (name: string) => header.indexOf(name);
-
-  const transactions = rows.slice(1).map((row) => ({
-    id: String(row[colIndex("id")] || ""),
-    item_code: String(row[colIndex("item_code")] || ""),
-    item_name: String(row[colIndex("item_name")] || ""),
-    type: (row[colIndex("type")] as "IN" | "OUT") || "IN",
-    qty: Number(row[colIndex("qty")] || 0),
-    reason: row[colIndex("reason")]
-      ? String(row[colIndex("reason")])
-      : undefined,
-    user_id: String(row[colIndex("user_id")] || ""),
-    user_name: String(row[colIndex("user_name")] || ""),
-    area: String(row[colIndex("area")] || ""),
-    date: String(row[colIndex("date")] || ""),
-    status:
-      (row[colIndex("status")] as
-        | "draft"
-        | "pending"
-        | "approved"
-        | "locked") || "draft",
-    approved_by: row[colIndex("approved_by")]
-      ? String(row[colIndex("approved_by")])
-      : undefined,
-    approved_at: row[colIndex("approved_at")]
-      ? String(row[colIndex("approved_at")])
-      : undefined,
-  }));
+  const transactions = rows
+    .slice(1)
+    .map((row) => rowToTransaction(row))
+    .filter((tx): tx is Transaction => Boolean(tx));
 
   return transactions;
+}
+
+/**
+ * ID でトランザクションを取得
+ */
+export async function getTransactionById(id: string): Promise<Transaction | null> {
+  const transactions = await getTransactions();
+  return transactions.find((tx) => tx.id === id) || null;
 }
 
 /**
@@ -294,32 +389,105 @@ export async function addTransaction(
   const range = "Transactions!A1";
 
   const id = `TRX_${Date.now()}`;
-  const values = [
-    [
-      id,
-      transaction.item_code,
-      transaction.item_name,
-      transaction.type,
-      transaction.qty,
-      transaction.reason || "",
-      transaction.user_id,
-      transaction.user_name,
-      transaction.area,
-      transaction.date,
-      transaction.status,
-      transaction.approved_by || "",
-      transaction.approved_at || "",
-    ],
-  ];
+  const row = Array(11).fill("");
+  row[TRX_COL.id] = id;
+  row[TRX_COL.itemCode] = transaction.item_code;
+  row[TRX_COL.itemName] = transaction.item_name;
+  row[TRX_COL.type] = transaction.type;
+  row[TRX_COL.qty] = transaction.qty;
+  row[TRX_COL.detail] = transaction.detail || transaction.reason || "";
+  row[TRX_COL.locationIndex] =
+    transaction.location_index !== undefined && transaction.location_index !== null
+      ? transaction.location_index
+      : "";
+  row[TRX_COL.createdBy] = transaction.user_name || transaction.user_id || "";
+  row[TRX_COL.area] = transaction.area;
+  row[TRX_COL.date] = transaction.date;
+  row[TRX_COL.status] = transaction.status;
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
     range,
     valueInputOption: "USER_ENTERED",
-    requestBody: { values },
+    requestBody: { values: [row] },
   });
 
   return id;
+}
+
+/**
+ * トランザクション内容を更新（数量・種別・理由・日付など）
+ */
+export async function updateTransaction(
+  id: string,
+  updates: Partial<
+    Pick<
+      Transaction,
+      | "item_code"
+      | "item_name"
+      | "type"
+      | "qty"
+      | "detail"
+      | "reason"
+      | "date"
+      | "status"
+      | "approved_by"
+      | "approved_at"
+      | "location_index"
+      | "area"
+      | "user_name"
+      | "user_id"
+    >
+  >,
+): Promise<void> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "Transactions!A1:K1000";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) return;
+
+  const dataRows = rows.slice(1);
+  const rowIndex = dataRows.findIndex((r) => r[TRX_COL.id] === id);
+  if (rowIndex === -1) return;
+
+  const nextRow = [...(dataRows[rowIndex] || [])];
+  const ensureLength = (arr: unknown[], length: number) => {
+    while (arr.length < length) arr.push("");
+  };
+  ensureLength(nextRow, 11);
+
+  if (updates.item_code !== undefined) nextRow[TRX_COL.itemCode] = updates.item_code;
+  if (updates.item_name !== undefined) nextRow[TRX_COL.itemName] = updates.item_name;
+  if (updates.type !== undefined) nextRow[TRX_COL.type] = updates.type;
+  if (updates.qty !== undefined) nextRow[TRX_COL.qty] = updates.qty;
+  const detailValue = updates.detail ?? updates.reason;
+  if (detailValue !== undefined) nextRow[TRX_COL.detail] = detailValue ?? "";
+  if (updates.location_index !== undefined)
+    nextRow[TRX_COL.locationIndex] =
+      updates.location_index !== null && updates.location_index !== undefined
+        ? updates.location_index
+        : "";
+  if (updates.user_name !== undefined || updates.user_id !== undefined) {
+    nextRow[TRX_COL.createdBy] = updates.user_name || updates.user_id || "";
+  }
+  if (updates.area !== undefined) nextRow[TRX_COL.area] = updates.area;
+  if (updates.date !== undefined) nextRow[TRX_COL.date] = updates.date;
+  if (updates.status !== undefined) nextRow[TRX_COL.status] = updates.status;
+
+  const updateRange = `Transactions!A${rowIndex + 2}:K${rowIndex + 2}`;
+  const values = [nextRow];
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: updateRange,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values },
+  });
 }
 
 /**
@@ -433,12 +601,11 @@ export async function addDiffLog(
  */
 export async function updateTransactionStatus(
   id: string,
-  status: "draft" | "pending" | "approved" | "locked",
-  approved_by?: string,
-  approved_at?: string
+  status: TransactionStatus,
+  approved_by?: string | null,
 ): Promise<void> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const range = "Transactions!A1:N1000";
+  const range = "Transactions!A1:K1000";
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -446,29 +613,29 @@ export async function updateTransactionStatus(
   });
 
   const rows = res.data.values || [];
-  const header = rows[0];
-  const colIndex = (name: string) => header.indexOf(name);
-  const idIdx = colIndex("id");
-
-  const rowIndex = rows.findIndex((r) => r[idIdx] === id);
+  const dataRows = rows.slice(1);
+  const rowIndex = dataRows.findIndex((r) => r[TRX_COL.id] === id);
   if (rowIndex === -1) return;
 
-  const statusIdx = colIndex("status");
-  const approvedByIdx = colIndex("approved_by");
-  const approvedAtIdx = colIndex("approved_at");
+  const nextRow = [...(dataRows[rowIndex] || [])];
+  while (nextRow.length < 11) nextRow.push("");
 
-  const updateRange = `Transactions!${String.fromCharCode(
-    65 + statusIdx
-  )}${rowIndex + 1}:${String.fromCharCode(
-    65 + approvedAtIdx
-  )}${rowIndex + 1}`;
-  const values = [[status, approved_by || "", approved_at || ""]];
+  nextRow[TRX_COL.status] = status;
+
+  if (approved_by) {
+    const stamp = `${approved_by} / ${new Date().toISOString()}`;
+    nextRow[TRX_COL.detail] = nextRow[TRX_COL.detail]
+      ? `${nextRow[TRX_COL.detail]} | 承認: ${stamp}`
+      : `承認: ${stamp}`;
+  }
+
+  const updateRange = `Transactions!A${rowIndex + 2}:K${rowIndex + 2}`;
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: updateRange,
     valueInputOption: "USER_ENTERED",
-    requestBody: { values },
+    requestBody: { values: [nextRow] },
   });
 }
 
@@ -521,7 +688,7 @@ export async function getStockAggregate(): Promise<
  * ステータスでトランザクションをフィルタリング
  */
 export async function getTransactionsByStatus(
-  status: "draft" | "pending" | "approved" | "locked"
+  status: TransactionStatus
 ): Promise<Transaction[]> {
   const transactions = await getTransactions();
   return transactions.filter((t) => t.status === status);
