@@ -50,13 +50,13 @@ interface TransactionFormState {
 
 interface TransactionRequestPayload {
   date: string;
-  base: string;
-  location: string;
-  itemName: string;
-  itemCode?: string;
-  quantity: number;
-  transactionType: TransactionType;
-  memo?: string;
+  base?: string;
+  location?: string;
+  item_code: string;
+  item_name: string;
+  qty: number;
+  type: TransactionType;
+  reason?: string;
 }
 
 const createInitialState = (): TransactionFormState => ({
@@ -268,6 +268,11 @@ export default function NewTransactionPage() {
       return;
     }
 
+    if (!form.itemCode.trim()) {
+      setSubmitError('品目候補を選択してください');
+      return;
+    }
+
     const qty = Number(form.quantity);
     if (!Number.isFinite(qty) || qty === 0) {
       setSubmitError('数量は0以外の数値を入力してください');
@@ -278,12 +283,12 @@ export default function NewTransactionPage() {
     const payload: TransactionRequestPayload = {
       date: form.date,
       base: form.base,
-      location: form.location.trim(),
-      itemName: form.itemName.trim(),
-      itemCode: form.itemCode.trim() || undefined,
-      quantity: Math.abs(qty),
-      transactionType: normalizedType,
-      memo: form.memo.trim() || undefined,
+      location: form.location.trim() || undefined,
+      item_code: form.itemCode.trim(),
+      item_name: form.itemName.trim(),
+      qty: Math.abs(qty),
+      type: normalizedType,
+      reason: form.memo.trim() || undefined,
     };
 
     setIsSubmitting(true);
