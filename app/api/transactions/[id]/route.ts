@@ -20,14 +20,15 @@ function normalizeType(value: unknown, qty?: number): TransactionType | undefine
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: Promise<{ id: string }> },
 ) {
+  const { id } = await context.params;
   const session = await getServerSession(authOptions);
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const tx = await getTransactionById(params.id);
+  const tx = await getTransactionById(id);
   if (!tx) {
     return NextResponse.json({ success: false, error: 'Transaction not found' }, { status: 404 });
   }
@@ -41,15 +42,16 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
+    const { id } = await context.params;
     const session = await getServerSession(authOptions);
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const existing = await getTransactionById(params.id);
+    const existing = await getTransactionById(id);
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Transaction not found' }, { status: 404 });
     }
@@ -94,7 +96,7 @@ export async function PATCH(
       );
     }
 
-    await updateTransaction(params.id, {
+    await updateTransaction(id, {
       item_code,
       item_name,
       qty,
