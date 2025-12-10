@@ -6,7 +6,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/auth';
 import { getItems } from '@/lib/sheets';
-import { detectItemGroup, normalizeGroupParam } from '@/lib/itemGroups';
+import {
+  detectItemGroup,
+  matchesGroupPrefix,
+  normalizeGroupParam,
+} from '@/lib/itemGroups';
 
 export async function GET(request: NextRequest) {
   try {
@@ -33,12 +37,16 @@ export async function GET(request: NextRequest) {
         };
       })
       .filter((item) => {
+        const detectedGroup = item.group;
+
         const matchesGroup =
-          selectedGroup === 'ALL' ||
-          item.group === selectedGroup ||
-          (selectedGroup !== 'OTHER' &&
-            ((item.item_code ?? '').toUpperCase().startsWith(selectedGroup) ||
-              (item.item_name ?? '').toUpperCase().startsWith(selectedGroup)));
+          selectedGroup === 'ALL'
+            ? true
+            : selectedGroup === 'OTHER'
+            ? detectedGroup === 'OTHER'
+            : detectedGroup === selectedGroup ||
+              matchesGroupPrefix(item.item_code, selectedGroup) ||
+              matchesGroupPrefix(item.item_name, selectedGroup);
 
         if (!matchesGroup) return false;
 
@@ -48,6 +56,12 @@ export async function GET(request: NextRequest) {
         const nameLower = item.item_name.toLowerCase();
         return codeLower.includes(keywordLower) || nameLower.includes(keywordLower);
       });
+
+    console.log('[items/search]', {
+      received: { group: groupParam, keyword },
+      total: items.length,
+      filtered: candidates.length,
+    });
 
     return NextResponse.json({
       success: true,

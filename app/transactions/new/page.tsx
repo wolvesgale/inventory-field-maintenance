@@ -184,6 +184,7 @@ export default function NewTransactionPage() {
         }
 
         const data = await res.json();
+        console.log('[items/search client]', data);
         if (cancelled) return;
 
         const raw = (data?.items ?? data?.data ?? data) as unknown;
