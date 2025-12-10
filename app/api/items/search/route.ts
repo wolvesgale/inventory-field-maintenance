@@ -10,23 +10,21 @@ import {
   ItemGroupKey,
   PRIMARY_GROUP_KEYS,
   normalizeGroupParam,
-  resolveGroupFromInitial,
 } from '@/lib/itemGroups';
 
-const matchesInitialGroup = (
-  initial: string | undefined | null,
-  selectedGroup: ItemGroupKey,
-): boolean => {
-  if (selectedGroup === 'ALL') return true;
+const MAIN_GROUPS = PRIMARY_GROUP_KEYS;
 
-  const value = (initial ?? '').trim().toUpperCase();
+const normalizeInitialGroup = (value?: string | null): string | null => {
+  const normalized = (value ?? '').trim().toUpperCase();
+  return normalized || null;
+};
 
-  if (selectedGroup === 'OTHER') {
-    if (!value) return true;
-    return !PRIMARY_GROUP_KEYS.some((key) => value.startsWith(key));
-  }
+const resolveGroupFromInitial = (initial: string | undefined | null): ItemGroupKey => {
+  const value = normalizeInitialGroup(initial);
+  if (!value) return 'OTHER';
 
-  return value.startsWith(selectedGroup);
+  const matched = MAIN_GROUPS.find((group) => value.startsWith(group));
+  return matched ?? 'OTHER';
 };
 
 export async function GET(request: NextRequest) {
@@ -44,23 +42,37 @@ export async function GET(request: NextRequest) {
 
     const items = await getItems();
 
-    const candidates = items
-      .filter((item) => {
-        if (!matchesInitialGroup(item.initial_group, selectedGroup)) {
-          return false;
-        }
+    let filtered = items;
 
-        if (!keywordLower) return true;
+    if (selectedGroup !== 'ALL') {
+      if (selectedGroup === 'OTHER') {
+        filtered = filtered.filter((item) => {
+          const group = normalizeInitialGroup(item.initial_group);
+          if (!group) return true;
+          return !MAIN_GROUPS.some((main) => group.startsWith(main));
+        });
+      } else {
+        filtered = filtered.filter((item) => {
+          const group = normalizeInitialGroup(item.initial_group);
+          if (!group) return false;
+          return group.startsWith(selectedGroup);
+        });
+      }
+    }
 
-        const codeLower = item.item_code.toLowerCase();
-        const nameLower = item.item_name.toLowerCase();
+    if (keywordLower) {
+      filtered = filtered.filter((item) => {
+        const codeLower = (item.item_code || '').toLowerCase();
+        const nameLower = (item.item_name || '').toLowerCase();
         return codeLower.includes(keywordLower) || nameLower.includes(keywordLower);
-      })
-      .map((item) => ({
-        item_code: item.item_code,
-        item_name: item.item_name,
-        group: resolveGroupFromInitial(item.initial_group),
-      }));
+      });
+    }
+
+    const candidates = filtered.map((item) => ({
+      item_code: item.item_code,
+      item_name: item.item_name,
+      group: resolveGroupFromInitial(item.initial_group),
+    }));
 
     console.log('[items/search]', {
       received: { group: groupParam, keyword },

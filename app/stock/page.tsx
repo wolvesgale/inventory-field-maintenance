@@ -69,7 +69,7 @@ export default function StockPage() {
                     <th className="text-center px-6 py-3 font-medium">期末</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="text-gray-900">
                   {stocks.map((stock, idx) => (
                     <tr key={idx} className="border-b hover:bg-gray-50">
                       <td className="px-6 py-3 flex items-center gap-2">

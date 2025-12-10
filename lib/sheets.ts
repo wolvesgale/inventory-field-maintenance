@@ -208,7 +208,7 @@ export async function getUserByLoginId(
  */
 export async function getItems(): Promise<InventoryItem[]> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const range = "Items!A1:H1000";
+  const range = "Items!A1:Z1000";
 
   // Items シート読み込み
   const res = await sheets.spreadsheets.values.get({
@@ -222,17 +222,18 @@ export async function getItems(): Promise<InventoryItem[]> {
   const header = rows[0];
   const colIndex = (name: string) => header.indexOf(name);
 
-  let items: InventoryItem[] = rows.slice(1).map((row) => {
-    const idxId = colIndex("id");
-    const idxItemCode = colIndex("item_code");
-    const idxItemName = colIndex("item_name");
-    const idxCategory = colIndex("category");
-    const idxUnit = colIndex("unit");
-    const idxCreatedAt = colIndex("created_at");
-    const idxNewFlag = colIndex("new_flag");
-    const idxInitialGroup = colIndex("initial_group"); // あれば使う
+  const idxId = colIndex("id");
+  const idxItemCode = colIndex("item_code");
+  const idxItemName = colIndex("item_name");
+  const idxCategory = colIndex("category");
+  const idxUnit = colIndex("unit");
+  const idxCreatedAt = colIndex("created_at");
+  const idxNewFlag = colIndex("new_flag");
+  const idxInitialGroup = colIndex("initial_group");
 
-    return {
+  let items: InventoryItem[] = rows
+    .slice(1)
+    .map((row) => ({
       id: String(row[idxId] || ""),
       item_code: String(row[idxItemCode] || ""),
       item_name: String(row[idxItemName] || ""),
@@ -248,10 +249,10 @@ export async function getItems(): Promise<InventoryItem[]> {
           : undefined,
       initial_group:
         idxInitialGroup >= 0 && row[idxInitialGroup]
-          ? String(row[idxInitialGroup])
+          ? String(row[idxInitialGroup]).trim()
           : undefined,
-    };
-  });
+    }))
+    .filter((item) => item.item_code);
 
   // 🔁 StockLedger から initial_group を補完
   if (items.some((item) => !item.initial_group)) {
@@ -263,8 +264,7 @@ export async function getItems(): Promise<InventoryItem[]> {
     const ledgerRows = ledgerRes.data.values || [];
     if (ledgerRows.length >= 2) {
       const ledgerHeader = ledgerRows[0];
-      const ledgerColIndex = (name: string) =>
-        ledgerHeader.indexOf(name);
+      const ledgerColIndex = (name: string) => ledgerHeader.indexOf(name);
 
       const idxLedgerItemCode = ledgerColIndex("item_code");
       const idxLedgerInitialGroup = ledgerColIndex("initial_group");
@@ -273,15 +273,18 @@ export async function getItems(): Promise<InventoryItem[]> {
         const ledgerMap = new Map<string, string>();
 
         for (const row of ledgerRows.slice(1)) {
-          const code = String(row[idxLedgerItemCode] || "");
-          const group = String(row[idxLedgerInitialGroup] || "");
+          const code = String(row[idxLedgerItemCode] || "").trim();
+          const group = String(row[idxLedgerInitialGroup] || "").trim();
           if (code && group && !ledgerMap.has(code)) {
             ledgerMap.set(code, group);
           }
         }
 
         items = items.map((item) => {
-          if (item.initial_group) return item;
+          if (item.initial_group && item.initial_group.trim() !== "") {
+            return item;
+          }
+
           const fallback = ledgerMap.get(item.item_code);
           return fallback ? { ...item, initial_group: fallback } : item;
         });
