@@ -1,3 +1,4 @@
+// app/api/transactions/new/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/auth';
@@ -15,10 +16,10 @@ export async function POST(request: NextRequest) {
     const { type, date, item_code, item_name, qty, reason, is_new_item } = body;
 
     // バリデーション
-    if (!type || !date || !item_code || (qty === undefined || qty === null)) {
+    if (!type || !date || !item_code || qty === undefined || qty === null) {
       return NextResponse.json(
         { success: false, error: 'Missing required fields' },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
     if (isNaN(parsedQty) || parsedQty <= 0) {
       return NextResponse.json(
         { success: false, error: 'Invalid quantity' },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -35,15 +36,15 @@ export async function POST(request: NextRequest) {
       if (!item_name) {
         return NextResponse.json(
           { success: false, error: 'Item name is required for new items' },
-          { status: 400 }
+          { status: 400 },
         );
       }
 
       const existingItem = await getItemByCode(item_code);
       if (!existingItem) {
         await addItem({
-          item_code: item_code,
-          item_name: item_name,
+          item_code,
+          item_name,
           category: '',
           unit: '個',
           created_at: new Date().toISOString(),
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
 
     // 入出庫取引を追加
     const transaction: Omit<Transaction, 'id'> = {
-      item_code: item_code,
+      item_code,
       item_name: item_name || '',
       type: type as 'IN' | 'OUT',
       qty: parsedQty,
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
     console.error('Failed to create transaction:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to create transaction' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

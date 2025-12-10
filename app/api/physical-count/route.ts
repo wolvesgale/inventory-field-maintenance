@@ -1,16 +1,18 @@
-/**
- * API: /api/physical-count - 棚卸
- */
-
+// app/api/physical-count/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/auth';
-import { getTransactions, getItems, addPhysicalCount, addDiffLog } from '@/lib/sheets';
+import { getTransactions, addPhysicalCount, addDiffLog } from '@/lib/sheets';
 
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || ((session.user as any)?.role !== 'manager' && (session.user as any)?.role !== 'admin')) {
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const user = session.user as any;
+    if (user.role !== 'manager' && user.role !== 'admin') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -20,23 +22,21 @@ export async function POST(request: NextRequest) {
     if (!date || !location || !counts || !Array.isArray(counts)) {
       return NextResponse.json(
         { success: false, error: 'Missing required fields' },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    // 在庫を集計してsystemQuantityを計算
+    // 在庫を集計して systemQuantity を計算
     const transactions = await getTransactions();
-    const approvedTransactions = transactions.filter(tx => 
-      tx.status === 'approved' || tx.status === 'locked'
+    const approvedTransactions = transactions.filter(
+      (tx) => tx.status === 'approved' || tx.status === 'locked',
     );
 
-    // カウント保存 + DiffLog作成
     for (const count of counts) {
       const { item_code, actual_qty } = count;
 
-      // systemQuantity を計算
       let systemQuantity = 0;
-      approvedTransactions.forEach(tx => {
+      approvedTransactions.forEach((tx) => {
         if (tx.item_code === item_code) {
           if (tx.type === 'IN') {
             systemQuantity += tx.qty;
@@ -46,29 +46,31 @@ export async function POST(request: NextRequest) {
         }
       });
 
+      const actual = parseInt(String(actual_qty), 10);
+      const difference = actual - systemQuantity;
+
       // PhysicalCount に記録
       const pcId = await addPhysicalCount({
         date,
         item_code,
         item_name: '',
         expected_qty: systemQuantity,
-        actual_qty: parseInt(String(actual_qty), 10),
-        difference: parseInt(String(actual_qty), 10) - systemQuantity,
-        user_id: (session.user as any).id,
-        user_name: (session.user as any).name,
+        actual_qty: actual,
+        difference,
+        user_id: user.id,
+        user_name: user.name,
         location,
         status: 'draft',
       });
 
       // 差異がある場合、DiffLog に記録
-      const difference = parseInt(String(actual_qty), 10) - systemQuantity;
       if (difference !== 0) {
         await addDiffLog({
           physical_count_id: pcId,
           item_code,
           item_name: '',
           expected_qty: systemQuantity,
-          actual_qty: parseInt(String(actual_qty), 10),
+          actual_qty: actual,
           diff: difference,
           reason: '',
           status: 'pending',
@@ -84,7 +86,7 @@ export async function POST(request: NextRequest) {
     console.error('Failed to save physical count:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to save physical count' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
