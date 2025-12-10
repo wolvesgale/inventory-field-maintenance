@@ -6,11 +6,36 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/auth';
 import { getItems } from '@/lib/sheets';
-import {
-  detectItemGroup,
-  matchesGroupPrefix,
-  normalizeGroupParam,
-} from '@/lib/itemGroups';
+import { ItemGroupKey, normalizeGroupParam } from '@/lib/itemGroups';
+
+const PRIMARY_GROUP_KEYS: ItemGroupKey[] = ['SAD', 'BU', 'CA', 'FR', 'EG', 'CF', 'MA'];
+
+const deriveGroupFromInitial = (initial: string | undefined | null): ItemGroupKey => {
+  const value = (initial ?? '').trim().toUpperCase();
+
+  for (const key of PRIMARY_GROUP_KEYS) {
+    if (value.startsWith(key)) return key;
+  }
+
+  if (!value) return 'OTHER';
+  return 'OTHER';
+};
+
+const matchesInitialGroup = (
+  initial: string | undefined | null,
+  selectedGroup: ItemGroupKey,
+): boolean => {
+  if (selectedGroup === 'ALL') return true;
+
+  const value = (initial ?? '').trim().toUpperCase();
+
+  if (selectedGroup === 'OTHER') {
+    if (!value) return true;
+    return !PRIMARY_GROUP_KEYS.some((key) => value.startsWith(key));
+  }
+
+  return value.startsWith(selectedGroup);
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,34 +53,22 @@ export async function GET(request: NextRequest) {
     const items = await getItems();
 
     const candidates = items
-      .map((item) => {
-        const group = detectItemGroup(item.item_name, item.item_code);
-        return {
-          item_code: item.item_code,
-          item_name: item.item_name,
-          group,
-        };
-      })
       .filter((item) => {
-        const detectedGroup = item.group;
-
-        const matchesGroup =
-          selectedGroup === 'ALL'
-            ? true
-            : selectedGroup === 'OTHER'
-            ? detectedGroup === 'OTHER'
-            : detectedGroup === selectedGroup ||
-              matchesGroupPrefix(item.item_code, selectedGroup) ||
-              matchesGroupPrefix(item.item_name, selectedGroup);
-
-        if (!matchesGroup) return false;
+        if (!matchesInitialGroup(item.initial_group, selectedGroup)) {
+          return false;
+        }
 
         if (!keywordLower) return true;
 
         const codeLower = item.item_code.toLowerCase();
         const nameLower = item.item_name.toLowerCase();
         return codeLower.includes(keywordLower) || nameLower.includes(keywordLower);
-      });
+      })
+      .map((item) => ({
+        item_code: item.item_code,
+        item_name: item.item_name,
+        group: deriveGroupFromInitial(item.initial_group),
+      }));
 
     console.log('[items/search]', {
       received: { group: groupParam, keyword },

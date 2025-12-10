@@ -3,7 +3,11 @@
 import React, { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { ITEM_GROUPS, type ItemGroupKey, isItemGroupKey } from '@/lib/itemGroups';
+import {
+  ITEM_GROUP_LABELS,
+  type ItemGroupKey,
+  isItemGroupKey,
+} from '@/lib/itemGroups';
 
 const WAREHOUSE_OPTIONS = ['箕面', '茨木', '八尾'] as const;
 const TRANSACTION_TYPE_OPTIONS = [
@@ -19,6 +23,18 @@ type ItemCandidate = {
   item_name: string;
   group: ItemGroupKey;
 };
+
+const GROUP_BUTTONS: { key: ItemGroupKey; label: string }[] = [
+  { key: 'ALL', label: ITEM_GROUP_LABELS.ALL },
+  { key: 'SAD', label: ITEM_GROUP_LABELS.SAD },
+  { key: 'BU', label: ITEM_GROUP_LABELS.BU },
+  { key: 'CA', label: ITEM_GROUP_LABELS.CA },
+  { key: 'FR', label: ITEM_GROUP_LABELS.FR },
+  { key: 'EG', label: ITEM_GROUP_LABELS.EG },
+  { key: 'CF', label: ITEM_GROUP_LABELS.CF },
+  { key: 'MA', label: ITEM_GROUP_LABELS.MA },
+  { key: 'OTHER', label: ITEM_GROUP_LABELS.OTHER },
+];
 
 interface TransactionFormState {
   date: string;
@@ -157,13 +173,6 @@ export default function NewTransactionPage() {
 
   // 品目サジェスト取得
   useEffect(() => {
-    // 条件が何もない場合はサジェストを出さない
-    if (!debouncedItemQuery && itemGroup === 'ALL') {
-      setItemCandidates([]);
-      setShowItemDropdown(false);
-      return;
-    }
-
     let cancelled = false;
 
     const fetchSuggestions = async () => {
@@ -171,11 +180,9 @@ export default function NewTransactionPage() {
         setIsLoadingItems(true);
 
         const params = new URLSearchParams();
+        params.set('group', itemGroup);
         if (debouncedItemQuery) {
           params.set('q', debouncedItemQuery);
-        }
-        if (itemGroup && itemGroup !== 'ALL') {
-          params.set('group', itemGroup);
         }
 
         const res = await fetch(`/api/items/search?${params.toString()}`);
@@ -383,7 +390,7 @@ export default function NewTransactionPage() {
 
               {/* グループボタン */}
               <div className="mb-2 flex flex-wrap gap-2">
-                {ITEM_GROUPS.map((group) => (
+                {GROUP_BUTTONS.map((group) => (
                   <button
                     key={group.key}
                     type="button"

@@ -24,6 +24,7 @@ export type InventoryItem = {
   unit: string;
   created_at?: string;
   new_flag?: boolean;
+  initial_group?: string;
 };
 
 export type Transaction = {
@@ -220,17 +221,24 @@ export async function getItems(): Promise<InventoryItem[]> {
   const header = rows[0];
   const colIndex = (name: string) => header.indexOf(name);
 
+  const idxId = colIndex("id");
+  const idxItemCode = colIndex("item_code");
+  const idxItemName = colIndex("item_name");
+  const idxCategory = colIndex("category");
+  const idxUnit = colIndex("unit");
+  const idxCreatedAt = colIndex("created_at");
+  const idxNewFlag = colIndex("new_flag");
+  const idxInitialGroup = colIndex("initial_group");
+
   const items = rows.slice(1).map((row) => ({
-    id: String(row[colIndex("id")] || ""),
-    item_code: String(row[colIndex("item_code")] || ""),
-    item_name: String(row[colIndex("item_name")] || ""),
-    category: String(row[colIndex("category")] || ""),
-    unit: String(row[colIndex("unit")] || ""),
-    created_at: row[colIndex("created_at")]
-      ? String(row[colIndex("created_at")])
-      : undefined,
-    new_flag:
-      String(row[colIndex("new_flag")] || "").toLowerCase() === "true",
+    id: String(row[idxId] || ""),
+    item_code: String(row[idxItemCode] || ""),
+    item_name: String(row[idxItemName] || ""),
+    category: String(row[idxCategory] || ""),
+    unit: String(row[idxUnit] || ""),
+    created_at: row[idxCreatedAt] ? String(row[idxCreatedAt]) : undefined,
+    new_flag: String(row[idxNewFlag] || "").toLowerCase() === "true",
+    initial_group: idxInitialGroup >= 0 ? String(row[idxInitialGroup] || "") : undefined,
   }));
 
   return items;
