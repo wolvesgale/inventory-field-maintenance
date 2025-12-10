@@ -40,33 +40,43 @@ export default function ApprovePage() {
   }, []);
 
   const handleToggleSelect = (id: string) => {
-    const newSet = new Set(selectedIds);
-    if (newSet.has(id)) {
-      newSet.delete(id);
-    } else {
-      newSet.add(id);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const updateStatus = async (id: string, status: 'approved' | 'draft') => {
+    const response = await fetch(`/api/transactions/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'status', status }),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data?.error || '処理に失敗しました');
     }
-    setSelectedIds(newSet);
   };
 
   const handleApprove = async (id: string, action: 'approve' | 'reject') => {
     try {
-      const response = await fetch('/api/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transactionId: id, action }),
+      const status = action === 'approve' ? 'approved' : 'draft';
+      await updateStatus(id, status);
+
+      setTransactions(prev => prev.filter(tx => tx.id !== id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
       });
-
-      const data = await response.json();
-
-      if (data.success) {
-        // UI更新
-        setTransactions(prev => prev.filter(tx => tx.id !== id));
-      } else {
-        alert(data.error || '処理に失敗しました');
-      }
     } catch (err) {
-      alert('ネットワークエラーが発生しました');
+      alert((err as Error).message || '処理に失敗しました');
       console.error('Failed to approve:', err);
     }
   };
@@ -78,20 +88,17 @@ export default function ApprovePage() {
     }
 
     try {
+      let successCount = 0;
       for (const id of selectedIds) {
-        await fetch('/api/approve', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ transactionId: id, action: 'approve' }),
-        });
+        await updateStatus(id, 'approved');
+        successCount += 1;
       }
 
-      // UI更新
       setTransactions(prev => prev.filter(tx => !selectedIds.has(tx.id || '')));
       setSelectedIds(new Set());
-      alert(`${selectedIds.size}件を一括承認しました`);
+      alert(`選択した ${successCount} 件を一括承認しました`);
     } catch (err) {
-      alert('ネットワークエラーが発生しました');
+      alert((err as Error).message || 'ネットワークエラーが発生しました');
       console.error('Failed to batch approve:', err);
     }
   };

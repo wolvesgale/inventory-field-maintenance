@@ -4,6 +4,7 @@ import { authOptions } from '@/auth';
 import {
   getTransactionById,
   updateTransaction,
+  updateTransactionStatus,
 } from '@/lib/sheets';
 import { Transaction } from '@/types';
 
@@ -61,6 +62,27 @@ export async function PATCH(
     }
 
     const body = await request.json();
+
+    // ステータスだけ更新するモード（承認/差戻し用）
+    if (body?.mode === 'status') {
+      const nextStatus = typeof body.status === 'string' ? body.status.trim() : '';
+      const allowedStatuses = ['draft', 'pending', 'approved', 'locked'];
+      if (!nextStatus || !allowedStatuses.includes(nextStatus)) {
+        return NextResponse.json(
+          { success: false, error: 'status is required' },
+          { status: 400 },
+        );
+      }
+
+      const approver = (session.user as any)?.id || (session.user as any)?.name || '';
+      const approvedAt = body.approved_at
+        ? String(body.approved_at)
+        : new Date().toISOString().split('T')[0];
+
+      await updateTransactionStatus(id, nextStatus as Transaction['status'], approver, approvedAt);
+
+      return NextResponse.json({ success: true, message: 'ステータスを更新しました' });
+    }
 
     const rawType = body.type ?? body.transactionType;
     const rawQty = body.qty ?? body.quantity;
