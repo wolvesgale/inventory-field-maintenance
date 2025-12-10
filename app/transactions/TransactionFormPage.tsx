@@ -9,6 +9,8 @@ import {
   isItemGroupKey,
   resolveGroupFromInitial,
 } from '@/lib/itemGroups';
+import { StatusBadge } from '@/components/StatusBadge';
+import { Transaction } from '@/types';
 
 const WAREHOUSE_OPTIONS = ['箕面', '茨木', '八尾'] as const;
 const TRANSACTION_TYPE_OPTIONS = [
@@ -87,12 +89,16 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
   const [itemCandidates, setItemCandidates] = useState<ItemCandidate[]>([]);
   const [showItemDropdown, setShowItemDropdown] = useState(false);
   const [isLoadingItems, setIsLoadingItems] = useState(false);
+  const [currentStock, setCurrentStock] = useState<number | null>(null);
+  const [isStockLoading, setIsStockLoading] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
 
   const [editId, setEditId] = useState<string | null>(initialEditId ?? null);
+  const [pendingTransactions, setPendingTransactions] = useState<Transaction[]>([]);
+  const [isLoadingPending, setIsLoadingPending] = useState(false);
 
   useEffect(() => {
     setEditId(initialEditId ?? null);
@@ -224,6 +230,74 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
       cancelled = true;
     };
   }, [debouncedItemQuery, itemGroup]);
+
+  // 品目コードに基づいて在庫数取得
+  useEffect(() => {
+    if (!form.itemCode) {
+      setCurrentStock(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsStockLoading(true);
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/stock?itemCode=${encodeURIComponent(form.itemCode)}`);
+        if (!res.ok) throw new Error('failed to fetch stock');
+        const data = await res.json();
+        if (cancelled) return;
+
+        const raw = (data?.data ?? data) as any;
+        const entry = Array.isArray(raw) ? raw[0] : raw;
+        if (!entry) {
+          setCurrentStock(0);
+          return;
+        }
+
+        const qtyValue =
+          entry.closing_qty ?? entry.currentQuantity ?? entry.quantity ?? entry.total_qty ?? 0;
+        const qtyNumber = Number(qtyValue);
+        setCurrentStock(Number.isFinite(qtyNumber) ? qtyNumber : 0);
+      } catch (error) {
+        console.error('failed to load stock', error);
+        if (!cancelled) setCurrentStock(null);
+      } finally {
+        if (!cancelled) setIsStockLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [form.itemCode]);
+
+  // 未承認の申請一覧（新規モードのみ）
+  useEffect(() => {
+    if (isEditMode) return;
+
+    let cancelled = false;
+    setIsLoadingPending(true);
+
+    (async () => {
+      try {
+        const res = await fetch('/api/transactions?status=pending');
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+
+        const list = (data?.data ?? data?.transactions ?? []) as Transaction[];
+        setPendingTransactions(Array.isArray(list) ? list : []);
+      } catch (error) {
+        console.error('failed to load pending transactions', error);
+      } finally {
+        if (!cancelled) setIsLoadingPending(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditMode]);
 
   const isFormDisabled = status !== 'authenticated';
 
@@ -466,6 +540,14 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
                     ))}
                   </ul>
                 )}
+
+                {isStockLoading ? (
+                  <p className="text-xs text-gray-500">現在庫数を取得中...</p>
+                ) : currentStock !== null ? (
+                  <p className="text-xs text-gray-800">
+                    現在庫数: <span className="font-semibold">{currentStock}</span>
+                  </p>
+                ) : null}
               </div>
             </div>
 
@@ -575,6 +657,49 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
           </form>
         </div>
       </div>
+
+      {!isEditMode && (
+        <div className="max-w-5xl mx-auto px-4 mt-8">
+          <section className="bg-white rounded-lg shadow px-6 py-4">
+            <h2 className="text-sm font-semibold text-gray-800 mb-3">承認待ちの申請一覧</h2>
+
+            {isLoadingPending ? (
+              <p className="text-sm text-gray-500">読み込み中...</p>
+            ) : pendingTransactions.length === 0 ? (
+              <p className="text-sm text-gray-500">承認待ちの申請はありません</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-100 border-b text-gray-800">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">日付</th>
+                      <th className="px-3 py-2 text-left font-medium">拠点</th>
+                      <th className="px-3 py-2 text-left font-medium">品目コード</th>
+                      <th className="px-3 py-2 text-left font-medium">数量</th>
+                      <th className="px-3 py-2 text-left font-medium">登録者</th>
+                      <th className="px-3 py-2 text-left font-medium">ステータス</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-gray-800">
+                    {pendingTransactions.map((tx) => (
+                      <tr key={tx.id} className="border-b last:border-b-0">
+                        <td className="px-3 py-2">{tx.date}</td>
+                        <td className="px-3 py-2">{tx.area}</td>
+                        <td className="px-3 py-2">{tx.item_code}</td>
+                        <td className="px-3 py-2">{tx.qty}</td>
+                        <td className="px-3 py-2">{tx.user_name || tx.user_id}</td>
+                        <td className="px-3 py-2">
+                          <StatusBadge status={tx.status} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }

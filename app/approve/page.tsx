@@ -168,7 +168,7 @@ export default function ApprovePage() {
                     <th className="text-left px-6 py-3 font-medium">アクション</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="text-gray-800">
                   {transactions.map((tx) => (
                     <tr key={tx.id} className="border-b hover:bg-gray-50">
                       <td className="px-6 py-3">
