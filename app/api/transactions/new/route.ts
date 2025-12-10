@@ -94,7 +94,11 @@ export async function POST(request: NextRequest) {
       item_name,
       type: normalizedType,
       qty,
+      detail: reason,
       reason,
+      location_index: Number.isFinite(Number(body.location))
+        ? Number(body.location)
+        : undefined,
       user_id: (session.user as any).id,
       user_name: (session.user as any).name,
       area: (session.user as any).area || '',

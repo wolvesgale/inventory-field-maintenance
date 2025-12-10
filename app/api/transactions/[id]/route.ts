@@ -34,7 +34,11 @@ export async function GET(
     return NextResponse.json({ success: false, error: 'Transaction not found' }, { status: 404 });
   }
 
-  if ((session.user as any)?.role === 'worker' && (session.user as any)?.id !== tx.user_id) {
+  if (
+    (session.user as any)?.role === 'worker' &&
+    (session.user as any)?.id &&
+    (session.user as any)?.id !== (tx.user_id || tx.user_name)
+  ) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
@@ -57,7 +61,11 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: 'Transaction not found' }, { status: 404 });
     }
 
-    if ((session.user as any)?.role === 'worker' && (session.user as any)?.id !== existing.user_id) {
+    if (
+      (session.user as any)?.role === 'worker' &&
+      (session.user as any)?.id &&
+      (session.user as any)?.id !== (existing.user_id || existing.user_name)
+    ) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -66,7 +74,7 @@ export async function PATCH(
     // ステータスだけ更新するモード（承認/差戻し用）
     if (body?.mode === 'status') {
       const nextStatus = typeof body.status === 'string' ? body.status.trim() : '';
-      const allowedStatuses = ['draft', 'pending', 'approved', 'locked'];
+      const allowedStatuses = ['draft', 'pending', 'approved', 'locked', 'returned'];
       if (!nextStatus || !allowedStatuses.includes(nextStatus)) {
         return NextResponse.json(
           { success: false, error: 'status is required' },
@@ -74,12 +82,10 @@ export async function PATCH(
         );
       }
 
-      const approver = (session.user as any)?.id || (session.user as any)?.name || '';
-      const approvedAt = body.approved_at
-        ? String(body.approved_at)
-        : new Date().toISOString().split('T')[0];
+      const approver =
+        body.approvedBy || (session.user as any)?.name || (session.user as any)?.id || '';
 
-      await updateTransactionStatus(id, nextStatus as Transaction['status'], approver, approvedAt);
+      await updateTransactionStatus(id, nextStatus as Transaction['status'], approver);
 
       return NextResponse.json({ success: true, message: 'ステータスを更新しました' });
     }

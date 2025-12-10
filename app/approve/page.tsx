@@ -51,22 +51,26 @@ export default function ApprovePage() {
     });
   };
 
-  const updateStatus = async (id: string, status: 'approved' | 'draft') => {
+  const updateStatus = async (id: string, status: 'approved' | 'returned') => {
     const response = await fetch(`/api/transactions/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'status', status }),
+      body: JSON.stringify({
+        mode: 'status',
+        status,
+        approvedBy: session?.user?.name ?? session?.user?.login_id ?? '',
+      }),
     });
 
-    const data = await response.json();
-    if (!response.ok || !data.success) {
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.success === false) {
       throw new Error(data?.error || '処理に失敗しました');
     }
   };
 
   const handleApprove = async (id: string, action: 'approve' | 'reject') => {
     try {
-      const status = action === 'approve' ? 'approved' : 'draft';
+      const status = action === 'approve' ? 'approved' : 'returned';
       await updateStatus(id, status);
 
       setTransactions(prev => prev.filter(tx => tx.id !== id));
@@ -90,13 +94,19 @@ export default function ApprovePage() {
     try {
       let successCount = 0;
       for (const id of selectedIds) {
-        await updateStatus(id, 'approved');
-        successCount += 1;
+        try {
+          await updateStatus(id, 'approved');
+          successCount += 1;
+        } catch (err) {
+          console.error('[bulk approve] failed', id, err);
+        }
       }
 
-      setTransactions(prev => prev.filter(tx => !selectedIds.has(tx.id || '')));
-      setSelectedIds(new Set());
-      alert(`選択した ${successCount} 件を一括承認しました`);
+      if (successCount > 0) {
+        alert(`選択した ${successCount} 件を一括承認しました`);
+        setTransactions(prev => prev.filter(tx => !selectedIds.has(tx.id || '')));
+        setSelectedIds(new Set());
+      }
     } catch (err) {
       alert((err as Error).message || 'ネットワークエラーが発生しました');
       console.error('Failed to batch approve:', err);
