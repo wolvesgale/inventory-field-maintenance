@@ -63,10 +63,10 @@ export default function StockPage() {
                   <tr>
                     <th className="text-left px-6 py-3 font-medium">品目コード</th>
                     <th className="text-left px-6 py-3 font-medium">品目名</th>
-                    <th className="text-center px-6 py-3 font-medium">期首</th>
+                    <th className="text-center px-6 py-3 font-medium">月初在庫</th>
                     <th className="text-center px-6 py-3 font-medium">入庫</th>
                     <th className="text-center px-6 py-3 font-medium">出庫</th>
-                    <th className="text-center px-6 py-3 font-medium">期末</th>
+                    <th className="text-center px-6 py-3 font-medium">月末在庫</th>
                   </tr>
                 </thead>
                 <tbody className="text-gray-900">

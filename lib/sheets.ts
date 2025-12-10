@@ -132,6 +132,46 @@ function getSheetsClient() {
   return { sheets, spreadsheetId };
 }
 
+type StockLedgerRow = {
+  itemCode: string;
+  itemName: string;
+  openingQty: number;
+  closingQty: number;
+  initialGroup?: string;
+};
+
+async function getStockLedgerMap(): Promise<Map<string, StockLedgerRow>> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "StockLedger!A2:H1000";
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values ?? [];
+  const map = new Map<string, StockLedgerRow>();
+
+  for (const row of rows) {
+    const itemCode = row[0];
+    if (!itemCode) continue;
+
+    const itemName = row[1] ?? "";
+    const openingQty = Number(row[2] ?? 0) || 0;
+    const closingQty = Number(row[5] ?? 0) || 0;
+    const initialGroup = row[7] ?? undefined;
+
+    map.set(String(itemCode), {
+      itemCode: String(itemCode),
+      itemName,
+      openingQty,
+      closingQty,
+      initialGroup,
+    });
+  }
+
+  return map;
+}
+
 export async function getUserByLoginId(
   login_id: string
 ): Promise<AppUser | null> {
@@ -646,42 +686,64 @@ export async function getStockAggregate(): Promise<
   Array<{
     item_code: string;
     item_name: string;
-    total_qty: number;
-    area: string;
+    opening_qty: number;
+    in_qty: number;
+    out_qty: number;
+    closing_qty: number;
+    new_flag: boolean;
+    is_new: boolean;
+    initial_group?: string;
   }>
 > {
-  const transactions = await getTransactions();
-  const approved = transactions.filter((t) => t.status === "approved");
+  const [items, transactions, ledgerMap] = await Promise.all([
+    getItems(),
+    getTransactions(),
+    getStockLedgerMap(),
+  ]);
 
-  const aggregate: Record<
+  const approved = transactions.filter(
+    (t) => t.status === "approved" || t.status === "locked"
+  );
+
+  const aggregate = new Map<
     string,
     {
-      item_code: string;
-      item_name: string;
-      total_qty: number;
-      area: string;
+      inQty: number;
+      outQty: number;
     }
-  > = {};
+  >();
 
   approved.forEach((t) => {
-    const key = `${t.item_code}_${t.area}`;
-    if (!aggregate[key]) {
-      aggregate[key] = {
-        item_code: t.item_code,
-        item_name: t.item_name,
-        total_qty: 0,
-        area: t.area,
-      };
-    }
-
+    const entry = aggregate.get(t.item_code) ?? { inQty: 0, outQty: 0 };
     if (t.type === "IN") {
-      aggregate[key].total_qty += t.qty;
-    } else {
-      aggregate[key].total_qty -= t.qty;
+      entry.inQty += t.qty;
+    } else if (t.type === "OUT") {
+      entry.outQty += t.qty;
     }
+    aggregate.set(t.item_code, entry);
   });
 
-  return Object.values(aggregate);
+  return items.map((item) => {
+    const ledger = ledgerMap.get(item.item_code);
+    const agg = aggregate.get(item.item_code) ?? { inQty: 0, outQty: 0 };
+
+    const openingFromLedger = ledger?.openingQty ?? 0;
+    const computedClosing = openingFromLedger + agg.inQty - agg.outQty;
+    const closingFromLedger = ledger?.closingQty ?? 0;
+    const closingQty = closingFromLedger || computedClosing;
+
+    return {
+      item_code: item.item_code,
+      item_name: item.item_name,
+      opening_qty: openingFromLedger,
+      in_qty: agg.inQty,
+      out_qty: agg.outQty,
+      closing_qty: closingQty,
+      new_flag: !!item.new_flag,
+      is_new: !!item.new_flag,
+      initial_group: ledger?.initialGroup ?? item.initial_group,
+    };
+  });
 }
 
 /**
