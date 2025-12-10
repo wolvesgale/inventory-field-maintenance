@@ -3,6 +3,7 @@
 import React, { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { ITEM_GROUPS, type ItemGroup } from '@/lib/itemGroups';
 
 const WAREHOUSE_OPTIONS = ['箕面', '茨木', '八尾'] as const;
 const TRANSACTION_TYPE_OPTIONS = [
@@ -10,21 +11,8 @@ const TRANSACTION_TYPE_OPTIONS = [
   { value: 'OUT', label: '出庫' },
 ] as const;
 
-const ITEM_GROUPS = [
-  'すべて',
-  'SAD',
-  'BU',
-  'CA',
-  'FR',
-  'EG',
-  'CF',
-  'MA',
-  'その他',
-] as const;
-
 type WarehouseOption = (typeof WAREHOUSE_OPTIONS)[number];
 type TransactionType = (typeof TRANSACTION_TYPE_OPTIONS)[number]['value'];
-type ItemGroup = (typeof ITEM_GROUPS)[number];
 
 type ItemCandidate = {
   item_code: string;
