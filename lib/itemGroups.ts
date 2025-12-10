@@ -16,7 +16,7 @@ const GROUP_KEYS = ITEM_GROUPS.filter((g) => g !== 'すべて' && g !== 'その�
 
 const groupMatchPatterns: Record<string, RegExp[]> = GROUP_KEYS.reduce(
   (acc, group) => {
-    const pattern = new RegExp(`^${group}[\s\-_/\[]?`, 'i');
+    const pattern = new RegExp(`^${group}(?:\s|-|_|/|\[)?`, 'i');
     acc[group] = [pattern];
     return acc;
   },
