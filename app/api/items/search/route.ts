@@ -25,30 +25,33 @@ export async function GET(request: NextRequest) {
 
     const candidates = items
       .map((item) => {
-        const initial_group = detectItemGroup(item.item_name, item.item_code, item.category);
+        const group = detectItemGroup(item.item_name, item.item_code);
         return {
           item_code: item.item_code,
           item_name: item.item_name,
-          initial_group,
+          group,
         };
       })
       .filter((item) => {
-        const matchesKeyword =
-          !keywordLower ||
-          item.item_name.toLowerCase().includes(keywordLower) ||
-          item.item_code.toLowerCase().includes(keywordLower);
-
         const matchesGroup =
-          selectedGroup === 'すべて' ||
-          (selectedGroup === 'その他' && item.initial_group === 'その他') ||
-          item.initial_group === selectedGroup;
+          selectedGroup === 'ALL' ||
+          item.group === selectedGroup ||
+          (selectedGroup !== 'OTHER' &&
+            ((item.item_code ?? '').toUpperCase().startsWith(selectedGroup) ||
+              (item.item_name ?? '').toUpperCase().startsWith(selectedGroup)));
 
-        return matchesKeyword && matchesGroup;
+        if (!matchesGroup) return false;
+
+        if (!keywordLower) return true;
+
+        const codeLower = item.item_code.toLowerCase();
+        const nameLower = item.item_name.toLowerCase();
+        return codeLower.includes(keywordLower) || nameLower.includes(keywordLower);
       });
 
     return NextResponse.json({
       success: true,
-      data: candidates,
+      items: candidates,
     });
   } catch (error) {
     console.error('Failed to search items:', error);
