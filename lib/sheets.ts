@@ -222,7 +222,7 @@ export async function getItems(): Promise<InventoryItem[]> {
   const header = rows[0];
   const colIndex = (name: string) => header.indexOf(name);
 
-  const items: InventoryItem[] = rows.slice(1).map((row) => {
+  let items: InventoryItem[] = rows.slice(1).map((row) => {
     const idxId = colIndex("id");
     const idxItemCode = colIndex("item_code");
     const idxItemName = colIndex("item_name");
@@ -253,9 +253,7 @@ export async function getItems(): Promise<InventoryItem[]> {
     };
   });
 
-  // 🔁 ここから StockLedger で initial_group を補完する処理
-
-  // Items 側に initial_group が入っていないものがあれば補完
+  // 🔁 StockLedger から initial_group を補完
   if (items.some((item) => !item.initial_group)) {
     const ledgerRes = await sheets.spreadsheets.values.get({
       spreadsheetId,
@@ -272,7 +270,6 @@ export async function getItems(): Promise<InventoryItem[]> {
       const idxLedgerInitialGroup = ledgerColIndex("initial_group");
 
       if (idxLedgerItemCode !== -1 && idxLedgerInitialGroup !== -1) {
-        // item_code -> initial_group のマップを構築
         const ledgerMap = new Map<string, string>();
 
         for (const row of ledgerRows.slice(1)) {
@@ -283,62 +280,12 @@ export async function getItems(): Promise<InventoryItem[]> {
           }
         }
 
-        // Items の initial_group が空のものだけ補完
-        for (const item of items) {
-          if (!item.initial_group) {
-            const group = ledgerMap.get(item.item_code);
-            if (group) {
-              item.initial_group = group;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  if (items.some((item) => !item.initial_group)) {
-    const { values: ledgerValues } = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: "StockLedger!A1:H1000",
-    });
-
-    const ledgerRows = ledgerValues || [];
-    if (ledgerRows.length >= 2) {
-      const ledgerHeader = ledgerRows[0];
-      const ledgerColIndex = (name: string) => ledgerHeader.indexOf(name);
-
-      const idxLedgerCode = ledgerColIndex("item_code");
-      const idxLedgerName = ledgerColIndex("item_name");
-      const idxLedgerInitial = ledgerColIndex("initial_group");
-
-      const ledgerMap = new Map<
-        string,
-        { initial_group?: string; item_name?: string }
-      >();
-
-      ledgerRows.slice(1).forEach((row) => {
-        const code = idxLedgerCode >= 0 ? String(row[idxLedgerCode] || "") : "";
-        if (!code) return;
-
-        ledgerMap.set(code, {
-          initial_group:
-            idxLedgerInitial >= 0 ? String(row[idxLedgerInitial] || "") : undefined,
-          item_name: idxLedgerName >= 0 ? String(row[idxLedgerName] || "") : undefined,
+        items = items.map((item) => {
+          if (item.initial_group) return item;
+          const fallback = ledgerMap.get(item.item_code);
+          return fallback ? { ...item, initial_group: fallback } : item;
         });
-      });
-
-      items = items.map((item) => {
-        if (item.initial_group) return item;
-
-        const fallback = ledgerMap.get(item.item_code);
-        if (!fallback) return item;
-
-        return {
-          ...item,
-          item_name: item.item_name || fallback.item_name || "",
-          initial_group: fallback.initial_group || undefined,
-        };
-      });
+      }
     }
   }
 
