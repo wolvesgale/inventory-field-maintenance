@@ -3,6 +3,7 @@
 import React, { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { ITEM_GROUPS, type ItemGroupKey, isItemGroupKey } from '@/lib/itemGroups';
 
 const WAREHOUSE_OPTIONS = ['箕面', '茨木', '八尾'] as const;
 const TRANSACTION_TYPE_OPTIONS = [
@@ -10,26 +11,13 @@ const TRANSACTION_TYPE_OPTIONS = [
   { value: 'OUT', label: '出庫' },
 ] as const;
 
-const ITEM_GROUPS = [
-  'すべて',
-  'SAD',
-  'BU',
-  'CA',
-  'FR',
-  'EG',
-  'CF',
-  'MA',
-  'その他',
-] as const;
-
 type WarehouseOption = (typeof WAREHOUSE_OPTIONS)[number];
 type TransactionType = (typeof TRANSACTION_TYPE_OPTIONS)[number]['value'];
-type ItemGroup = (typeof ITEM_GROUPS)[number];
 
 type ItemCandidate = {
   item_code: string;
   item_name: string;
-  initial_group?: string;
+  group: ItemGroupKey;
 };
 
 interface TransactionFormState {
@@ -76,7 +64,7 @@ export default function NewTransactionPage() {
   const { data: session, status } = useSession();
 
   const [form, setForm] = useState<TransactionFormState>(() => createInitialState());
-  const [itemGroup, setItemGroup] = useState<ItemGroup>('すべて');
+  const [itemGroup, setItemGroup] = useState<ItemGroupKey>('ALL');
   const [itemQuery, setItemQuery] = useState('');
   const [debouncedItemQuery, setDebouncedItemQuery] = useState('');
   const [itemCandidates, setItemCandidates] = useState<ItemCandidate[]>([]);
@@ -153,11 +141,7 @@ export default function NewTransactionPage() {
         });
 
         setItemQuery(tx.item_name);
-        setItemGroup(
-          (tx.initial_group as ItemGroup) && ITEM_GROUPS.includes(tx.initial_group as ItemGroup)
-            ? (tx.initial_group as ItemGroup)
-            : 'すべて',
-        );
+        setItemGroup(isItemGroupKey(tx.initial_group) ? tx.initial_group : 'ALL');
 
         setIsEditMode(true);
       } catch (error) {
@@ -174,7 +158,7 @@ export default function NewTransactionPage() {
   // 品目サジェスト取得
   useEffect(() => {
     // 条件が何もない場合はサジェストを出さない
-    if (!debouncedItemQuery && itemGroup === 'すべて') {
+    if (!debouncedItemQuery && itemGroup === 'ALL') {
       setItemCandidates([]);
       setShowItemDropdown(false);
       return;
@@ -190,7 +174,7 @@ export default function NewTransactionPage() {
         if (debouncedItemQuery) {
           params.set('q', debouncedItemQuery);
         }
-        if (itemGroup && itemGroup !== 'すべて') {
+        if (itemGroup && itemGroup !== 'ALL') {
           params.set('group', itemGroup);
         }
 
@@ -202,33 +186,19 @@ export default function NewTransactionPage() {
         const data = await res.json();
         if (cancelled) return;
 
-        const raw = (data?.data ?? data?.items ?? data) as unknown;
+        const raw = (data?.items ?? data?.data ?? data) as unknown;
         const arr = Array.isArray(raw) ? raw : [];
 
         const mapped: ItemCandidate[] = arr
           .map((row: any) => ({
             item_code: normalize(row.item_code),
             item_name: normalize(row.item_name),
-            initial_group: row.initial_group ? normalize(row.initial_group) : undefined,
+            group: isItemGroupKey(row.group) ? row.group : 'OTHER',
           }))
           .filter((row) => row.item_code && row.item_name);
 
-        const filtered = mapped.filter((row) => {
-          const name = row.item_name.toLowerCase();
-          const code = row.item_code.toLowerCase();
-          const q = debouncedItemQuery.toLowerCase();
-
-          const matchKeyword = !debouncedItemQuery || name.includes(q) || code.includes(q);
-          const matchGroup =
-            itemGroup === 'すべて' ||
-            row.initial_group === itemGroup ||
-            (!row.initial_group && itemGroup === 'その他');
-
-          return matchKeyword && matchGroup;
-        });
-
-        setItemCandidates(filtered);
-        setShowItemDropdown(filtered.length > 0);
+        setItemCandidates(mapped);
+        setShowItemDropdown(mapped.length > 0);
       } catch (error) {
         console.error('Failed to fetch item suggestions', error);
         if (!cancelled) {
@@ -333,7 +303,7 @@ export default function NewTransactionPage() {
         setItemQuery('');
         setItemCandidates([]);
         setShowItemDropdown(false);
-        setItemGroup('すべて');
+        setItemGroup('ALL');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '登録に失敗しました';
@@ -414,17 +384,17 @@ export default function NewTransactionPage() {
               <div className="mb-2 flex flex-wrap gap-2">
                 {ITEM_GROUPS.map((group) => (
                   <button
-                    key={group}
+                    key={group.key}
                     type="button"
-                    onClick={() => setItemGroup(group)}
+                    onClick={() => setItemGroup(group.key)}
                     className={`rounded px-3 py-1 text-xs font-medium border ${
-                      itemGroup === group
+                      itemGroup === group.key
                         ? 'border-blue-500 bg-blue-50 text-blue-600'
                         : 'border-gray-300 bg-white text-gray-700'
                     }`}
                     disabled={isFormDisabled}
                   >
-                    {group}
+                    {group.label}
                   </button>
                 ))}
               </div>
@@ -557,7 +527,7 @@ export default function NewTransactionPage() {
                     setItemQuery('');
                     setItemCandidates([]);
                     setShowItemDropdown(false);
-                    setItemGroup('すべて');
+        setItemGroup('ALL');
                     setSubmitError(null);
                   }}
                   disabled={isSubmitting || isFormDisabled}
