@@ -50,3 +50,18 @@ export function StatusBadge({ status }: StatusBadgeProps) {
 }
 
 export default StatusBadge;
+
+// Simple badge to indicate newly added items in listings.
+export type NewItemBadgeProps = {
+  isNew?: boolean;
+};
+
+export function NewItemBadge({ isNew }: NewItemBadgeProps) {
+  if (!isNew) return null;
+
+  return (
+    <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-blue-200 text-blue-800 ml-1">
+      NEW
+    </span>
+  );
+}
