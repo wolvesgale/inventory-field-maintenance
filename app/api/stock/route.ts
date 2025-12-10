@@ -6,12 +6,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/auth';
 import { getTransactions, getItems } from '@/lib/sheets';
-import { StockViewItem } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || ((session.user as any)?.role !== 'manager' && (session.user as any)?.role !== 'admin')) {
+    const itemCode = request.nextUrl.searchParams.get('itemCode')?.trim();
+    if (
+      !session ||
+      ((session.user as any)?.role !== 'manager' &&
+        (session.user as any)?.role !== 'admin' &&
+        (session.user as any)?.role !== 'worker')
+    ) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -24,7 +29,19 @@ export async function GET(request: NextRequest) {
     );
 
     // 品目ごとに集計
-    const stockMap = new Map<string, StockViewItem>();
+    const stockMap = new Map<
+      string,
+      {
+        item_code: string;
+        item_name: string;
+        opening_qty: number;
+        in_qty: number;
+        out_qty: number;
+        closing_qty: number;
+        new_flag: boolean;
+        is_new: boolean;
+      }
+    >();
 
     items.forEach(item => {
       stockMap.set(item.item_code, {
@@ -65,7 +82,28 @@ export async function GET(request: NextRequest) {
       stock.closing_qty = stock.opening_qty + stock.in_qty - stock.out_qty;
     });
 
-    const stockList = Array.from(stockMap.values());
+    let stockList = Array.from(stockMap.values());
+
+    if (itemCode) {
+      stockList = stockList.filter(
+        (entry) => entry.item_code && entry.item_code === itemCode,
+      );
+
+      if (stockList.length === 0) {
+        stockList = [
+          {
+            item_code: itemCode,
+            item_name: '',
+            opening_qty: 0,
+            in_qty: 0,
+            out_qty: 0,
+            closing_qty: 0,
+            new_flag: false,
+            is_new: false,
+          },
+        ];
+      }
+    }
 
     return NextResponse.json({
       success: true,

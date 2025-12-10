@@ -69,7 +69,12 @@ export interface Item {
 // ============================================================
 
 export type TransactionType = 'IN' | 'OUT';
-export type TransactionStatus = 'draft' | 'pending' | 'approved' | 'locked';
+export type TransactionStatus =
+  | 'draft'
+  | 'pending'
+  | 'approved'
+  | 'returned'
+  | 'locked';
 
 export interface Transaction {
   id?: string;
@@ -77,9 +82,11 @@ export interface Transaction {
   item_name: string;
   type: TransactionType;
   qty: number;
+  detail?: string;
   reason?: string;
-  user_id: string;
-  user_name: string;
+  location_index?: number | null;
+  user_id?: string;
+  user_name?: string;
   area: string;
   date: string;
   status: TransactionStatus;
