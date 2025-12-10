@@ -2,20 +2,19 @@
  * /dashboard ページ
  */
 
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/auth';
+import { getSessionUserFromCookies } from '@/auth';
 import { Navigation } from '@/components/Navigation';
 import { redirect } from 'next/navigation';
 
 export default async function DashboardPage() {
-  const session = await getServerSession(authOptions);
+  const sessionUser = getSessionUserFromCookies();
 
-  if (!session) {
+  if (!sessionUser) {
     redirect('/login');
   }
 
-  const userRole = (session.user as any)?.role || 'worker';
-  const userName = session.user?.name || 'ユーザー';
+  const userRole = sessionUser.role || 'worker';
+  const userName = sessionUser.name || 'ユーザー';
 
   return (
     <div className="min-h-screen bg-gray-50">

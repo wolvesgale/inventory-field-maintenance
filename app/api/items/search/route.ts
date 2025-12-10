@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/auth';
-import { searchItems } from '@/lib/sheets';
+import { getItems } from '@/lib/sheets';
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,12 +14,32 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const query = request.nextUrl.searchParams.get('q') || '';
-    const items = await searchItems(query);
+    const keyword =
+      (request.nextUrl.searchParams.get('keyword') || request.nextUrl.searchParams.get('q') || '')
+        .toLowerCase()
+        .trim();
+    const group =
+      (request.nextUrl.searchParams.get('initial_group') || request.nextUrl.searchParams.get('group') || '')
+        .toUpperCase()
+        .trim();
+
+    const items = await getItems();
+    const filtered = items.filter((item) => {
+      const matchesGroup = !group || group === 'ALL' || (item.initial_group || '').toUpperCase() === group;
+
+      if (!matchesGroup) return false;
+
+      if (!keyword) return true;
+
+      return (
+        item.item_code.toLowerCase().includes(keyword) ||
+        item.item_name.toLowerCase().includes(keyword)
+      );
+    });
 
     return NextResponse.json({
       success: true,
-      data: items,
+      data: filtered,
     });
   } catch (error) {
     console.error('Failed to search items:', error);

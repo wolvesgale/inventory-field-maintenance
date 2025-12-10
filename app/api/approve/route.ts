@@ -3,22 +3,27 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/auth';
-import { getTransactionsByStatus, updateTransactionStatus } from '@/lib/sheets';
+import { getSessionUserFromRequest } from '@/auth';
+import { getTransactionById, getTransactionsByStatus, updateTransactionStatus } from '@/lib/sheets';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session || ((session.user as any)?.role !== 'manager' && (session.user as any)?.role !== 'admin')) {
+    const sessionUser = getSessionUserFromRequest(request);
+    if (!sessionUser || (sessionUser.role !== 'manager' && sessionUser.role !== 'admin')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const pendingTransactions = await getTransactionsByStatus('pending');
+    const area = sessionUser.area;
+    const filtered = pendingTransactions.filter((tx) => {
+      if (tx.type !== 'OUT') return false;
+      if (area && tx.area !== area) return false;
+      return true;
+    });
 
     return NextResponse.json({
       success: true,
-      data: pendingTransactions,
+      data: filtered,
     });
   } catch (error) {
     console.error('Failed to fetch pending transactions:', error);
@@ -31,8 +36,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session || ((session.user as any)?.role !== 'manager' && (session.user as any)?.role !== 'admin')) {
+    const sessionUser = getSessionUserFromRequest(request);
+    if (!sessionUser || (sessionUser.role !== 'manager' && sessionUser.role !== 'admin')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -46,12 +51,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const current = await getTransactionById(transactionId);
+    if (!current || current.type !== 'OUT' || (sessionUser.area && current.area !== sessionUser.area)) {
+      return NextResponse.json({ success: false, error: '承認対象が見つかりません' }, { status: 404 });
+    }
+
     if (action === 'approve') {
       const now = new Date().toISOString();
       await updateTransactionStatus(
         transactionId,
         'approved',
-        session.user.id,
+        sessionUser.id,
         now.split('T')[0]
       );
     } else if (action === 'reject') {

@@ -19,6 +19,7 @@ export type InventoryItem = {
   unit: string;
   created_at?: string;
   new_flag?: boolean;
+  initial_group?: string;
 };
 
 export type Transaction = {
@@ -73,29 +74,70 @@ export type SupplierReport = {
 };
 
 function getSheetsClient() {
-  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
-  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
+  const privateKeyRaw = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  const spreadsheetId =
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim() ||
+    process.env.GOOGLE_SPREADSHEET_ID?.trim();
 
-  if (!clientEmail || !privateKey || !spreadsheetId) {
+  if (!process.env.GOOGLE_SHEETS_SPREADSHEET_ID && process.env.GOOGLE_SPREADSHEET_ID) {
+    console.warn(
+      '[DEBUG sheets] GOOGLE_SPREADSHEET_ID is set. Please rename it to GOOGLE_SHEETS_SPREADSHEET_ID so it matches the code.'
+    );
+  }
+
+  if (!clientEmail || !privateKeyRaw || !spreadsheetId) {
     console.error('[DEBUG sheets] Missing environment variables:', {
       hasEmail: !!clientEmail,
-      hasKey: !!privateKey,
+      hasKey: !!privateKeyRaw,
       hasSpreadsheetId: !!spreadsheetId,
       envKeys: Object.keys(process.env).filter(k => k.includes('GOOGLE') || k.includes('SHEETS')),
     });
-    throw new Error("Google Sheets の環境変数が不足しています。.env.local に以下を設定してください: GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, GOOGLE_SHEETS_SPREADSHEET_ID");
+    throw new Error(
+      "Google Sheets の環境変数が不足しています。.env.local に以下を設定してください: GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, GOOGLE_SHEETS_SPREADSHEET_ID"
+    );
   }
 
   const auth = new google.auth.JWT({
     email: clientEmail,
-    key: privateKey.replace(/\\n/g, "\n"),
+    key: privateKeyRaw.replace(/\\n/g, "\n"),
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
 
   const sheets = google.sheets({ version: "v4", auth });
 
   return { sheets, spreadsheetId };
+}
+
+/**
+ * StockLedger から item_code -> initial_group の対応表を取得
+ */
+export async function getInitialGroupMapFromStockLedger(): Promise<Map<string, string>> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "StockLedger!A1:H";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) return new Map();
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+  const codeIdx = colIndex("item_code");
+  const groupIdx = colIndex("initial_group");
+
+  const map = new Map<string, string>();
+  rows.slice(1).forEach((row) => {
+    const code = codeIdx >= 0 ? String(row[codeIdx] ?? "").trim() : "";
+    if (!code) return;
+    const group = groupIdx >= 0 ? String(row[groupIdx] ?? "").trim() : "";
+    map.set(code, group || "その他");
+  });
+
+  return map;
 }
 
 export async function getUserByLoginId(login_id: string): Promise<AppUser | null> {
@@ -148,8 +190,11 @@ export async function getUserByLoginId(login_id: string): Promise<AppUser | null
     throw new Error("Users シートのヘッダが想定と異なります");
   }
 
-  const row = dataRows.find((r) => r[idxLoginId] === login_id);
-  console.log('[DEBUG sheets] Looking for login_id:', login_id);
+  const normalizedLoginId = login_id.trim();
+  const row = dataRows.find(
+    (r) => String(r[idxLoginId]).trim() === normalizedLoginId
+  );
+  console.log('[DEBUG sheets] Looking for login_id:', normalizedLoginId);
   console.log('[DEBUG sheets] Found row:', row ? { ...row } : null);
 
   if (!row) {
@@ -185,11 +230,60 @@ export async function getUserByLoginId(login_id: string): Promise<AppUser | null
 }
 
 /**
+ * ユーザーパスワードを更新
+ */
+export async function updateUserPassword(
+  loginId: string,
+  hashedPassword: string
+): Promise<void> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "Users!A1:G1000";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) {
+    throw new Error("Users シートにデータがありません");
+  }
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+  const loginIdx = colIndex("login_id");
+  const passwordIdx = colIndex("password_hash");
+
+  if (loginIdx === -1 || passwordIdx === -1) {
+    throw new Error("Users シートのヘッダが想定と異なります");
+  }
+
+  const normalized = loginId.trim();
+  const rowIndex = rows.findIndex((row) => String(row[loginIdx]).trim() === normalized);
+
+  if (rowIndex === -1) {
+    throw new Error(`login_id=${normalized} の行が見つかりません`);
+  }
+
+  const columnLetter = String.fromCharCode(65 + passwordIdx);
+  const updateRange = `Users!${columnLetter}${rowIndex + 1}`;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: updateRange,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[hashedPassword]] },
+  });
+}
+
+/**
  * 全商品を取得
  */
 export async function getItems(): Promise<InventoryItem[]> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const range = "Items!A1:H1000";
+  const range = "Items!A1:Z1000";
+
+  const initialGroupMap = await getInitialGroupMapFromStockLedger().catch(() => new Map<string, string>());
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -210,6 +304,7 @@ export async function getItems(): Promise<InventoryItem[]> {
     unit: String(row[colIndex("unit")] || ""),
     created_at: row[colIndex("created_at")] ? String(row[colIndex("created_at")]) : undefined,
     new_flag: String(row[colIndex("new_flag")] || "").toLowerCase() === "true",
+    initial_group: initialGroupMap.get(String(row[colIndex("item_code")] || "")) || "その他",
   }));
 
   return items;
@@ -252,6 +347,11 @@ export async function getTransactions(): Promise<Transaction[]> {
   return transactions;
 }
 
+export async function getTransactionById(id: string): Promise<Transaction | null> {
+  const transactions = await getTransactions();
+  return transactions.find((tx) => tx.id === id) ?? null;
+}
+
 /**
  * 新規トランザクションを追加
  */
@@ -284,6 +384,73 @@ export async function addTransaction(transaction: Omit<Transaction, 'id'>): Prom
   });
 
   return id;
+}
+
+export async function updateTransaction(id: string, updates: Partial<Omit<Transaction, 'id'>>): Promise<void> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "Transactions!A1:N1000";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) {
+    throw new Error('Transactions sheet is empty');
+  }
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+  const idIdx = colIndex("id");
+  const rowIndex = rows.findIndex((r) => r[idIdx] === id);
+  if (rowIndex === -1) {
+    throw new Error(`Transaction ${id} not found`);
+  }
+
+  const sourceRow = rows[rowIndex] ?? [];
+  const mergedRow = header.map((col, idx) => {
+    switch (col) {
+      case "id":
+        return id;
+      case "item_code":
+        return updates.item_code ?? sourceRow[idx] ?? "";
+      case "item_name":
+        return updates.item_name ?? sourceRow[idx] ?? "";
+      case "type":
+        return updates.type ?? (sourceRow[idx] as Transaction["type"]) ?? "IN";
+      case "qty":
+        return updates.qty !== undefined ? String(updates.qty) : String(sourceRow[idx] ?? "");
+      case "reason":
+        return updates.reason ?? sourceRow[idx] ?? "";
+      case "user_id":
+        return updates.user_id ?? sourceRow[idx] ?? "";
+      case "user_name":
+        return updates.user_name ?? sourceRow[idx] ?? "";
+      case "area":
+        return updates.area ?? sourceRow[idx] ?? "";
+      case "date":
+        return updates.date ?? sourceRow[idx] ?? "";
+      case "status":
+        return updates.status ?? (sourceRow[idx] as Transaction["status"]) ?? "draft";
+      case "approved_by":
+        return updates.approved_by ?? sourceRow[idx] ?? "";
+      case "approved_at":
+        return updates.approved_at ?? sourceRow[idx] ?? "";
+      default:
+        return sourceRow[idx] ?? "";
+    }
+  });
+
+  const lastColLetter = String.fromCharCode(65 + header.length - 1);
+  const updateRange = `Transactions!A${rowIndex + 1}:${lastColLetter}${rowIndex + 1}`;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: updateRange,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [mergedRow] },
+  });
 }
 
 /**

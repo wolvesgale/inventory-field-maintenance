@@ -1,5 +1,6 @@
 // auth.ts
 import type { NextAuthOptions } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { getUserByLoginId } from "@/lib/sheets";
@@ -86,3 +87,11 @@ export const authOptions: NextAuthOptions = {
     },
   },
 };
+
+// 現在の多数の API で利用しているセッション取得ヘルパー。
+// NextAuth のセッションから user を返すだけの薄いラッパーで、
+// 既存の認可フローを変更しない。
+export async function getSessionUserFromRequest(_req?: Request) {
+  const session = await getServerSession(authOptions);
+  return session?.user ?? null;
+}

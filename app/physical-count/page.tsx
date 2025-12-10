@@ -24,6 +24,7 @@ export default function PhysicalCountPage() {
   const [counts, setCounts] = useState<CountItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const isPlaceholder = true;
 
   // 品目を取得
   useEffect(() => {
@@ -105,8 +106,11 @@ export default function PhysicalCountPage() {
       <Navigation />
 
       <main className="max-w-6xl mx-auto px-4 py-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <h1 className="text-2xl font-bold mb-6">棚卸</h1>
+        <div className="bg-white rounded-lg shadow p-6 text-gray-900">
+          <h1 className="text-2xl font-bold mb-4 text-gray-900">棚卸（準備中）</h1>
+          <p className="mb-4 text-sm text-gray-800">
+            現在、この棚卸画面は将来の機能追加用のプレースホルダーです。現行の運用では使用しません（在庫管理は「在庫台帳」と「入出庫登録」を利用してください）。
+          </p>
 
           {error && (
             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -125,8 +129,9 @@ export default function PhysicalCountPage() {
                 type="month"
                 value={month}
                 onChange={(e) => setMonth(e.target.value)}
-                className="w-full max-w-xs px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full max-w-xs px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                 required
+                disabled={isPlaceholder || isLoading}
               />
             </div>
 
@@ -141,8 +146,9 @@ export default function PhysicalCountPage() {
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 placeholder="倉庫A など"
-                className="w-full max-w-xs px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full max-w-xs px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                 required
+                disabled={isPlaceholder || isLoading}
               />
             </div>
 
@@ -161,8 +167,8 @@ export default function PhysicalCountPage() {
                   <tbody>
                     {counts.map((count) => (
                       <tr key={count.item_code} className="hover:bg-gray-50">
-                        <td className="border px-4 py-2">{count.item_code}</td>
-                        <td className="border px-4 py-2">{count.item_name}</td>
+                        <td className="border px-4 py-2 text-gray-900">{count.item_code}</td>
+                        <td className="border px-4 py-2 text-gray-900">{count.item_name}</td>
                         <td className="border px-4 py-2">
                           <input
                             type="number"
@@ -170,8 +176,9 @@ export default function PhysicalCountPage() {
                             onChange={(e) =>
                               handleCountChange(count.item_code, parseInt(e.target.value) || 0)
                             }
-                            className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
+                            className="w-20 px-2 py-1 border border-gray-300 rounded text-center text-gray-900"
                             min="0"
+                            disabled={isPlaceholder || isLoading}
                           />
                         </td>
                       </tr>
@@ -185,7 +192,7 @@ export default function PhysicalCountPage() {
             <div className="flex gap-4">
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isPlaceholder || isLoading}
                 className="flex-1 max-w-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition"
               >
                 {isLoading ? '保存中...' : '保存'}
@@ -193,7 +200,8 @@ export default function PhysicalCountPage() {
               <button
                 type="button"
                 onClick={() => router.back()}
-                className="flex-1 max-w-xs bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 px-4 rounded-lg transition"
+                disabled={isPlaceholder}
+                className="flex-1 max-w-xs bg-gray-300 hover:bg-gray-400 disabled:bg-gray-300 disabled:text-gray-600 text-gray-800 font-bold py-3 px-4 rounded-lg transition"
               >
                 キャンセル
               </button>
