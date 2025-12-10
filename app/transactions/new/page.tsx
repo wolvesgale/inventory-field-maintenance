@@ -7,6 +7,7 @@ import {
   ITEM_GROUP_LABELS,
   type ItemGroupKey,
   isItemGroupKey,
+  resolveGroupFromInitial,
 } from '@/lib/itemGroups';
 
 const WAREHOUSE_OPTIONS = ['箕面', '茨木', '八尾'] as const;
@@ -157,7 +158,7 @@ export default function NewTransactionPage() {
         });
 
         setItemQuery(tx.item_name);
-        setItemGroup(isItemGroupKey(tx.initial_group) ? tx.initial_group : 'ALL');
+        setItemGroup(resolveGroupFromInitial(tx.initial_group));
 
         setIsEditMode(true);
       } catch (error) {
@@ -273,14 +274,15 @@ export default function NewTransactionPage() {
       return;
     }
 
+    const normalizedType: TransactionType = qty > 0 ? 'IN' : 'OUT';
     const payload: TransactionRequestPayload = {
       date: form.date,
       base: form.base,
       location: form.location.trim(),
       itemName: form.itemName.trim(),
       itemCode: form.itemCode.trim() || undefined,
-      quantity: qty,
-      transactionType: form.transactionType,
+      quantity: Math.abs(qty),
+      transactionType: normalizedType,
       memo: form.memo.trim() || undefined,
     };
 
@@ -464,7 +466,21 @@ export default function NewTransactionPage() {
                 id="quantity"
                 type="number"
                 value={form.quantity}
-                onChange={(event) => handleFieldChange('quantity')(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  const qtyNumber = Number(value);
+
+                  setForm((prev) => ({
+                    ...prev,
+                    quantity: value,
+                    transactionType:
+                      !Number.isNaN(qtyNumber) && qtyNumber !== 0
+                        ? qtyNumber > 0
+                          ? 'IN'
+                          : 'OUT'
+                        : prev.transactionType,
+                  }));
+                }}
                 placeholder="例：10 または -3"
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 step="1"

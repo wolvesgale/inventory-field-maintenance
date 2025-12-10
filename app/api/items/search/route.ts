@@ -6,20 +6,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/auth';
 import { getItems } from '@/lib/sheets';
-import { ItemGroupKey, normalizeGroupParam } from '@/lib/itemGroups';
-
-const PRIMARY_GROUP_KEYS: ItemGroupKey[] = ['SAD', 'BU', 'CA', 'FR', 'EG', 'CF', 'MA'];
-
-const deriveGroupFromInitial = (initial: string | undefined | null): ItemGroupKey => {
-  const value = (initial ?? '').trim().toUpperCase();
-
-  for (const key of PRIMARY_GROUP_KEYS) {
-    if (value.startsWith(key)) return key;
-  }
-
-  if (!value) return 'OTHER';
-  return 'OTHER';
-};
+import {
+  ItemGroupKey,
+  PRIMARY_GROUP_KEYS,
+  normalizeGroupParam,
+  resolveGroupFromInitial,
+} from '@/lib/itemGroups';
 
 const matchesInitialGroup = (
   initial: string | undefined | null,
@@ -67,7 +59,7 @@ export async function GET(request: NextRequest) {
       .map((item) => ({
         item_code: item.item_code,
         item_name: item.item_name,
-        group: deriveGroupFromInitial(item.initial_group),
+        group: resolveGroupFromInitial(item.initial_group),
       }));
 
     console.log('[items/search]', {

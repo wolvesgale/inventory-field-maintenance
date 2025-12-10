@@ -29,6 +29,16 @@ export const ITEM_GROUPS: { key: ItemGroupKey; label: string }[] = ITEM_GROUP_KE
   label: ITEM_GROUP_LABELS[key],
 }));
 
+export const PRIMARY_GROUP_KEYS: ItemGroupKey[] = [
+  'SAD',
+  'BU',
+  'CA',
+  'FR',
+  'EG',
+  'CF',
+  'MA',
+];
+
 export function normalizeGroupParam(value: string | null): ItemGroupKey {
   if (!value) return 'ALL';
 
@@ -44,4 +54,16 @@ export function normalizeGroupParam(value: string | null): ItemGroupKey {
 export function isItemGroupKey(value: string | undefined | null): value is ItemGroupKey {
   if (!value) return false;
   return ITEM_GROUP_KEYS.includes(value as ItemGroupKey);
+}
+
+export function resolveGroupFromInitial(initial: string | undefined | null): ItemGroupKey {
+  const normalized = (initial ?? '').trim().toUpperCase();
+
+  for (const key of PRIMARY_GROUP_KEYS) {
+    if (normalized.startsWith(key)) return key;
+  }
+
+  if (!normalized) return 'OTHER';
+
+  return 'OTHER';
 }
