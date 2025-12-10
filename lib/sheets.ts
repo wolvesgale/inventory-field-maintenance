@@ -24,6 +24,7 @@ export type InventoryItem = {
   unit: string;
   created_at?: string;
   new_flag?: boolean;
+  initial_group?: string; // 追加: StockLedger のグループをここに入れる
 };
 
 export type Transaction = {
@@ -209,6 +210,7 @@ export async function getItems(): Promise<InventoryItem[]> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "Items!A1:H1000";
 
+  // Items シート読み込み
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range,
@@ -220,18 +222,79 @@ export async function getItems(): Promise<InventoryItem[]> {
   const header = rows[0];
   const colIndex = (name: string) => header.indexOf(name);
 
-  const items = rows.slice(1).map((row) => ({
-    id: String(row[colIndex("id")] || ""),
-    item_code: String(row[colIndex("item_code")] || ""),
-    item_name: String(row[colIndex("item_name")] || ""),
-    category: String(row[colIndex("category")] || ""),
-    unit: String(row[colIndex("unit")] || ""),
-    created_at: row[colIndex("created_at")]
-      ? String(row[colIndex("created_at")])
-      : undefined,
-    new_flag:
-      String(row[colIndex("new_flag")] || "").toLowerCase() === "true",
-  }));
+  const items: InventoryItem[] = rows.slice(1).map((row) => {
+    const idxId = colIndex("id");
+    const idxItemCode = colIndex("item_code");
+    const idxItemName = colIndex("item_name");
+    const idxCategory = colIndex("category");
+    const idxUnit = colIndex("unit");
+    const idxCreatedAt = colIndex("created_at");
+    const idxNewFlag = colIndex("new_flag");
+    const idxInitialGroup = colIndex("initial_group"); // あれば使う
+
+    return {
+      id: String(row[idxId] || ""),
+      item_code: String(row[idxItemCode] || ""),
+      item_name: String(row[idxItemName] || ""),
+      category: String(row[idxCategory] || ""),
+      unit: String(row[idxUnit] || ""),
+      created_at:
+        idxCreatedAt >= 0 && row[idxCreatedAt]
+          ? String(row[idxCreatedAt])
+          : undefined,
+      new_flag:
+        idxNewFlag >= 0
+          ? String(row[idxNewFlag] || "").toLowerCase() === "true"
+          : undefined,
+      initial_group:
+        idxInitialGroup >= 0 && row[idxInitialGroup]
+          ? String(row[idxInitialGroup])
+          : undefined,
+    };
+  });
+
+  // 🔁 ここから StockLedger で initial_group を補完する処理
+
+  // Items 側に initial_group が入っていないものがあれば補完
+  if (items.some((item) => !item.initial_group)) {
+    const ledgerRes = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: "StockLedger!A1:H1000",
+    });
+
+    const ledgerRows = ledgerRes.data.values || [];
+    if (ledgerRows.length >= 2) {
+      const ledgerHeader = ledgerRows[0];
+      const ledgerColIndex = (name: string) =>
+        ledgerHeader.indexOf(name);
+
+      const idxLedgerItemCode = ledgerColIndex("item_code");
+      const idxLedgerInitialGroup = ledgerColIndex("initial_group");
+
+      if (idxLedgerItemCode !== -1 && idxLedgerInitialGroup !== -1) {
+        // item_code -> initial_group のマップを構築
+        const ledgerMap = new Map<string, string>();
+
+        for (const row of ledgerRows.slice(1)) {
+          const code = String(row[idxLedgerItemCode] || "");
+          const group = String(row[idxLedgerInitialGroup] || "");
+          if (code && group && !ledgerMap.has(code)) {
+            ledgerMap.set(code, group);
+          }
+        }
+
+        // Items の initial_group が空のものだけ補完
+        for (const item of items) {
+          if (!item.initial_group) {
+            const group = ledgerMap.get(item.item_code);
+            if (group) {
+              item.initial_group = group;
+            }
+          }
+        }
+      }
+    }
+  }
 
   return items;
 }
