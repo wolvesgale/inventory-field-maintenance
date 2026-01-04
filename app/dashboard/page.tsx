@@ -6,6 +6,8 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/auth';
 import { Navigation } from '@/components/Navigation';
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
+import { getTransactions } from '@/lib/sheets';
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -16,6 +18,13 @@ export default async function DashboardPage() {
 
   const userRole = (session.user as any)?.role || 'worker';
   const userName = session.user?.name || 'ユーザー';
+  const isManager = userRole === 'manager';
+
+  let pendingCount = 0;
+  if (isManager) {
+    const allTransactions = await getTransactions();
+    pendingCount = allTransactions.filter((tx) => tx.status === 'pending').length;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -28,6 +37,27 @@ export default async function DashboardPage() {
             {userName}さん（{userRole === 'worker' ? '現場担当' : userRole === 'manager' ? 'マネージャー' : '管理者'}）
           </p>
         </div>
+
+        {isManager && (
+          <section className="mb-6 rounded-lg border border-slate-200 bg-slate-50 px-6 py-4">
+            <h2 className="mb-2 text-sm font-semibold text-slate-700">お知らせ</h2>
+            {pendingCount > 0 ? (
+              <div className="flex items-center justify-between text-sm">
+                <p className="text-slate-800">
+                  未承認の申請が <span className="font-bold">{pendingCount} 件</span> あります。
+                </p>
+                <Link
+                  href="/approve"
+                  className="rounded bg-orange-500 px-3 py-1 text-xs font-semibold text-white hover:bg-orange-600"
+                >
+                  承認画面へ
+                </Link>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">未承認の申請はありません。</p>
+            )}
+          </section>
+        )}
 
         {/* Worker専用コンテンツ */}
         {(userRole === 'worker' || userRole === 'manager' || userRole === 'admin') && (
