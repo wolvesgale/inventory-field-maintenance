@@ -1057,6 +1057,62 @@ export async function getTransactionsByStatus(
   return transactions.filter((t) => t.status === status);
 }
 
+async function getSheetIdByTitle(title: string): Promise<number | null> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId,
+    includeGridData: false,
+  });
+  const sheet = res.data.sheets?.find((s) => s.properties?.title === title);
+  return sheet?.properties?.sheetId ?? null;
+}
+
+export async function deleteTransactionById(id: string): Promise<void> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "Transactions!A1:Z1000";
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) return;
+
+  const header = rows[0] ?? [];
+  const { map: colMap } = buildTransactionColumnMap(header);
+
+  const dataRows = rows.slice(1);
+  const rowIndex = dataRows.findIndex((r) => r[colMap.id] === id);
+  if (rowIndex === -1) return;
+
+  const sheetId = await getSheetIdByTitle("Transactions");
+  if (sheetId === null) {
+    throw new Error("Transactions シートが見つかりませんでした");
+  }
+
+  const startIndex = rowIndex + 1; // ヘッダー行を除いた0-based
+  const endIndex = startIndex + 1;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex,
+              endIndex,
+            },
+          },
+        },
+      ],
+    },
+  });
+}
+
 /**
  * アイテムコードから商品を検索
  */

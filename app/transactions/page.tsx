@@ -16,6 +16,7 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<TransactionView[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchTransactions = async () => {
@@ -55,6 +56,25 @@ export default function TransactionsPage() {
   const formatReturnComment = (comment?: string) => {
     if (!comment) return '';
     return comment.length > 80 ? `${comment.slice(0, 80)}…` : comment;
+  };
+
+  const handleDelete = async (id?: string) => {
+    if (!id) return;
+    if (!window.confirm('この取引を削除しますか？')) return;
+
+    setIsDeleting(id);
+    try {
+      const res = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.success === false) {
+        throw new Error(data?.error || '削除に失敗しました');
+      }
+      setTransactions((prev) => prev.filter((tx) => tx.id !== id));
+    } catch (err) {
+      alert((err as Error).message || '削除に失敗しました');
+    } finally {
+      setIsDeleting(null);
+    }
   };
 
   const renderOutcome = (tx: TransactionView) => {
@@ -142,14 +162,26 @@ export default function TransactionsPage() {
                           {tx.user_name || tx.user_id || '-'}
                         </td>
                       )}
-                      <td className="px-6 py-3 text-gray-900">
+                      <td className="px-6 py-3 text-gray-900 whitespace-nowrap text-sm text-right">
                         {tx.id ? (
-                          <Link
-                            href={`/transactions/${tx.id}`}
-                            className="rounded border border-gray-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50"
-                          >
-                            編集
-                          </Link>
+                          <>
+                            <Link
+                              href={`/transactions/${tx.id}`}
+                              className="mr-3 rounded border border-gray-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50"
+                            >
+                              編集
+                            </Link>
+                            {session?.user?.role === 'manager' && tx.status !== 'approved' && (
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(tx.id)}
+                                className="text-xs font-semibold text-red-600 hover:underline disabled:text-gray-400"
+                                disabled={isDeleting === tx.id}
+                              >
+                                {isDeleting === tx.id ? '削除中...' : '削除'}
+                              </button>
+                            )}
+                          </>
                         ) : (
                           <span className="text-sm text-gray-500">-</span>
                         )}
