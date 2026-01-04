@@ -46,10 +46,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const actorName = (session.user as any)?.name || session.user.id;
+    const trimmedComment = typeof comment === 'string' ? comment.trim() : '';
+
     if (action === 'approve') {
-      await updateTransactionStatus(transactionId, 'approved', session.user.id);
+      await updateTransactionStatus(transactionId, 'approved', { actorName });
     } else if (action === 'reject') {
-      await updateTransactionStatus(transactionId, 'returned', session.user.id);
+      if (!trimmedComment) {
+        return NextResponse.json(
+          { success: false, error: '差し戻しコメントを入力してください' },
+          { status: 400 }
+        );
+      }
+      await updateTransactionStatus(transactionId, 'returned', {
+        actorName,
+        returnComment: trimmedComment,
+      });
     }
 
     return NextResponse.json({

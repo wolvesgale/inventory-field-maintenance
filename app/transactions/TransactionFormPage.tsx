@@ -12,13 +12,11 @@ import {
 import { StatusBadge } from '@/components/StatusBadge';
 import { Transaction } from '@/types';
 
-const WAREHOUSE_OPTIONS = ['箕面', '茨木', '八尾'] as const;
 const TRANSACTION_TYPE_OPTIONS = [
   { value: 'IN', label: '入庫' },
   { value: 'OUT', label: '出庫' },
 ] as const;
 
-type WarehouseOption = (typeof WAREHOUSE_OPTIONS)[number];
 type TransactionType = (typeof TRANSACTION_TYPE_OPTIONS)[number]['value'];
 
 type ItemCandidate = {
@@ -41,7 +39,6 @@ const GROUP_BUTTONS: { key: ItemGroupKey; label: string }[] = [
 
 interface TransactionFormState {
   date: string;
-  base: WarehouseOption;
   location: string;
   itemName: string;
   itemCode: string;
@@ -52,7 +49,6 @@ interface TransactionFormState {
 
 interface TransactionRequestPayload {
   date: string;
-  base?: string;
   location?: string;
   item_code: string;
   item_name: string;
@@ -67,7 +63,6 @@ interface TransactionFormPageProps {
 
 const createInitialState = (): TransactionFormState => ({
   date: new Date().toISOString().split('T')[0],
-  base: WAREHOUSE_OPTIONS[0],
   location: '',
   itemName: '',
   itemCode: '',
@@ -99,6 +94,7 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
   const [editId, setEditId] = useState<string | null>(initialEditId ?? null);
   const [pendingTransactions, setPendingTransactions] = useState<Transaction[]>([]);
   const [isLoadingPending, setIsLoadingPending] = useState(false);
+  const [loadedTxMeta, setLoadedTxMeta] = useState<Transaction | null>(null);
 
   useEffect(() => {
     setEditId(initialEditId ?? null);
@@ -124,6 +120,7 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
     if (!editId) {
       setIsEditMode(false);
       setForm(createInitialState());
+      setLoadedTxMeta(null);
       return;
     }
 
@@ -138,21 +135,10 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
           throw new Error(data.error || '取引情報の取得に失敗しました');
         }
 
-        const tx = data.data as {
-          date: string;
-          base?: string;
-          location?: string;
-          item_code?: string;
-          item_name: string;
-          qty: number;
-          type: TransactionType;
-          reason?: string;
-          initial_group?: string;
-        };
+        const tx = data.data as Transaction & { initial_group?: string };
 
         setForm({
           date: tx.date,
-          base: (tx.base as WarehouseOption) || WAREHOUSE_OPTIONS[0],
           location: tx.location ?? '',
           itemName: tx.item_name,
           itemCode: tx.item_code ?? '',
@@ -161,6 +147,7 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
           memo: tx.reason ?? '',
         });
 
+        setLoadedTxMeta(tx);
         setItemQuery(tx.item_name);
         setItemGroup(resolveGroupFromInitial(tx.initial_group));
 
@@ -353,7 +340,6 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
     const normalizedType: TransactionType = qty > 0 ? 'IN' : 'OUT';
     const payload: TransactionRequestPayload = {
       date: form.date,
-      base: form.base,
       location: form.location.trim() || undefined,
       item_code: form.itemCode.trim(),
       item_name: form.itemName.trim(),
@@ -414,11 +400,46 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
             ダッシュボードへ戻る
           </button>
         </div>
+        {session?.user?.area && (
+          <p className="mb-4 text-sm text-gray-700">
+            ログイン拠点: <span className="font-semibold">{session.user.area}</span>
+          </p>
+        )}
 
         <div className="bg-white rounded-xl shadow p-6">
           {submitError && (
             <div className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {submitError}
+            </div>
+          )}
+
+          {isEditMode && loadedTxMeta && (
+            <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <div className="flex flex-wrap items-center gap-3 text-sm text-gray-900">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">ステータス:</span>
+                  <StatusBadge status={loadedTxMeta.status} />
+                </div>
+                <div>
+                  <span className="font-semibold">依頼者:</span>{' '}
+                  {loadedTxMeta.user_name || loadedTxMeta.user_id || '-'}
+                </div>
+                <div>
+                  <span className="font-semibold">拠点:</span> {loadedTxMeta.area || '-'}
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3 text-sm text-gray-800 sm:grid-cols-2">
+                <div>承認者: {loadedTxMeta.approved_by || loadedTxMeta.approvedBy || '-'}</div>
+                <div>承認日時: {loadedTxMeta.approved_at || loadedTxMeta.approvedAt || '-'}</div>
+                <div>差し戻し: {loadedTxMeta.returnedBy || '-'}</div>
+                <div>差し戻し日時: {loadedTxMeta.returnedAt || '-'}</div>
+              </div>
+              {loadedTxMeta.returnComment && (
+                <div className="mt-3 text-sm text-gray-800">
+                  <div className="font-semibold">差し戻しコメント</div>
+                  <p className="mt-1 whitespace-pre-wrap break-words">{loadedTxMeta.returnComment}</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -437,26 +458,6 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
                 required
                 disabled={isFormDisabled}
               />
-            </div>
-
-            {/* 拠点 */}
-            <div>
-              <label htmlFor="base" className="mb-2 block text-sm font-medium text-gray-700">
-                拠点
-              </label>
-              <select
-                id="base"
-                value={form.base}
-                onChange={(event) => handleFieldChange('base')(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                disabled={isFormDisabled}
-              >
-                {WAREHOUSE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
             </div>
 
             {/* 保管場所 */}
