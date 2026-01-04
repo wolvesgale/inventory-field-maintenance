@@ -106,7 +106,10 @@ export default function PhysicalCountPage() {
 
       <main className="max-w-6xl mx-auto px-4 py-6">
         <div className="bg-white rounded-lg shadow p-6">
-          <h1 className="text-2xl font-bold mb-6">棚卸</h1>
+          <h1 className="text-2xl font-bold mb-2 text-gray-900">棚卸</h1>
+          <p className="mt-2 text-sm text-gray-700">
+            この画面は将来の棚卸機能拡張用のプレースホルダーです。今後、棚卸結果の一括登録や差異管理などを追加予定です。
+          </p>
 
           {error && (
             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">

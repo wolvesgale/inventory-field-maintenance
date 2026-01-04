@@ -62,7 +62,7 @@ export default async function DashboardPage() {
         {/* Worker専用コンテンツ */}
         {(userRole === 'worker' || userRole === 'manager' || userRole === 'admin') && (
           <div className="bg-white rounded-lg shadow p-6 mb-6">
-            <h2 className="text-xl font-bold mb-4">入出庫登録</h2>
+            <h2 className="text-xl font-bold mb-4 text-gray-900">入出庫登録</h2>
             <p className="text-gray-600 mb-4">
               新しい入出庫を登録したいですか？
             </p>
@@ -81,7 +81,7 @@ export default async function DashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
               {/* 承認待ち */}
               <div className="bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-bold mb-4">承認待ち取引</h2>
+                <h2 className="text-xl font-bold mb-4 text-gray-900">承認待ち取引</h2>
                 <p className="text-gray-600 mb-4">
                   マネージャー承認待ちの取引を確認・承認します。
                 </p>
@@ -95,7 +95,7 @@ export default async function DashboardPage() {
 
               {/* 在庫台帳 */}
               <div className="bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-bold mb-4">在庫台帳</h2>
+                <h2 className="text-xl font-bold mb-4 text-gray-900">在庫台帳</h2>
                 <p className="text-gray-600 mb-4">
                   現在の在庫状況を確認します。
                 </p>
@@ -111,7 +111,7 @@ export default async function DashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* 棚卸 */}
               <div className="bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-bold mb-4">棚卸</h2>
+                <h2 className="text-xl font-bold mb-4 text-gray-900">棚卸</h2>
                 <p className="text-gray-600 mb-4">
                   月末棚卸（実在庫カウント）を実施します。
                 </p>
@@ -125,7 +125,7 @@ export default async function DashboardPage() {
 
               {/* 月次レポート */}
               <div className="bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-bold mb-4">月次レポート</h2>
+                <h2 className="text-xl font-bold mb-4 text-gray-900">月次レポート</h2>
                 <p className="text-gray-600 mb-4">
                   月次締め処理と差異確認を行います。
                 </p>

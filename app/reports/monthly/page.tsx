@@ -86,7 +86,10 @@ export default function MonthlyReportPage() {
         <div className="space-y-6">
           {/* コントロール */}
           <div className="bg-white rounded-lg shadow p-6">
-            <h1 className="text-2xl font-bold mb-6">月次レポート</h1>
+            <h1 className="text-2xl font-bold mb-2 text-gray-900">月次レポート</h1>
+            <p className="mt-2 text-sm text-gray-700">
+              この画面は将来の月次レポート機能拡張用のプレースホルダーです。今後、在庫差異レポートや月次集計の出力などを追加予定です。
+            </p>
 
             {error && (
               <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -122,7 +125,7 @@ export default function MonthlyReportPage() {
               {/* 新規品目 */}
               {newItems.length > 0 && (
                 <div className="bg-white rounded-lg shadow p-6">
-                  <h2 className="text-xl font-bold mb-4">新規型番リスト</h2>
+                <h2 className="text-xl font-bold mb-4 text-gray-900">新規型番リスト</h2>
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-gray-100 border-b">
@@ -149,7 +152,7 @@ export default function MonthlyReportPage() {
               {/* 差異あり */}
               {diffItems.length > 0 && (
                 <div className="bg-white rounded-lg shadow p-6">
-                  <h2 className="text-xl font-bold mb-4">差異ありの品目</h2>
+                <h2 className="text-xl font-bold mb-4 text-gray-900">差異ありの品目</h2>
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-gray-100 border-b">
@@ -181,7 +184,7 @@ export default function MonthlyReportPage() {
 
               {/* 月次締め */}
               <div className="bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-bold mb-4">月次締め処理</h2>
+                <h2 className="text-xl font-bold mb-4 text-gray-900">月次締め処理</h2>
                 <p className="text-gray-600 mb-4">
                   すべてのデータ確認が完了したら、以下を実行してください：
                 </p>
