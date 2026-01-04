@@ -50,6 +50,14 @@ export type Transaction = {
   status: TransactionStatus;
   approved_by?: string;
   approved_at?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  returnComment?: string;
+  return_comment?: string;
+  returnedAt?: string;
+  returnedBy?: string;
+  returned_at?: string;
+  returned_by?: string;
 };
 
 // Transactions シートの列マッピング（0-based）
@@ -65,7 +73,27 @@ const TRX_COL = {
   area: 8,
   date: 9,
   status: 10,
+  approvedBy: 11,
+  approvedAt: 12,
+  returnComment: 13,
+  returnedAt: 14,
+  returnedBy: 15,
 } as const;
+
+const TRX_COL_COUNT = Object.keys(TRX_COL).length;
+
+function columnLetterFromIndex(index: number): string {
+  let result = "";
+  let n = index + 1;
+  while (n > 0) {
+    const remainder = (n - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    n = Math.floor((n - 1) / 26);
+  }
+  return result;
+}
+
+const TRX_RANGE = `Transactions!A1:${columnLetterFromIndex(TRX_COL_COUNT - 1)}1000`;
 
 export type PhysicalCount = {
   id: string;
@@ -170,6 +198,74 @@ async function getStockLedgerMap(): Promise<Map<string, StockLedgerRow>> {
   }
 
   return map;
+}
+
+async function updateStockLedgerForApprovedTransaction(tx: Transaction) {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const range = "StockLedger!A1:H1000";
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length === 0) return;
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+
+  const idxItemCode = colIndex("item_code");
+  const idxItemName = colIndex("item_name");
+  const idxOpeningQty = colIndex("opening_qty");
+  const idxClosingQty = colIndex("closing_qty");
+
+  if (idxItemCode === -1 || idxClosingQty === -1) {
+    console.warn("[StockLedger] Missing required columns");
+    return;
+  }
+  if (!tx.item_code || (tx.type !== "IN" && tx.type !== "OUT")) return;
+
+  const dataRows = rows.slice(1);
+  const targetRowIndex = dataRows.findIndex(
+    (r) => (r[idxItemCode] ?? "").toString() === tx.item_code
+  );
+
+  const absQty = Math.abs(Number(tx.qty) || 0);
+  const delta = tx.type === "IN" ? absQty : -absQty;
+
+  if (targetRowIndex >= 0) {
+    const nextRow = [...(dataRows[targetRowIndex] || [])];
+    while (nextRow.length < header.length) nextRow.push("");
+
+    const currentQty = Number(nextRow[idxClosingQty] ?? 0) || 0;
+    nextRow[idxClosingQty] = currentQty + delta;
+    if (idxItemName >= 0) {
+      nextRow[idxItemName] = tx.item_name || nextRow[idxItemName] || "";
+    }
+
+    const updateRange = `StockLedger!A${targetRowIndex + 2}:${columnLetterFromIndex(
+      header.length - 1
+    )}${targetRowIndex + 2}`;
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: updateRange,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [nextRow] },
+    });
+  } else {
+    const newRow = Array(header.length).fill("");
+    newRow[idxItemCode] = tx.item_code;
+    if (idxItemName >= 0) newRow[idxItemName] = tx.item_name;
+    if (idxOpeningQty >= 0) newRow[idxOpeningQty] = 0;
+    newRow[idxClosingQty] = delta;
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: "StockLedger!A1",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [newRow] },
+    });
+  }
 }
 
 export async function getUserByLoginId(
@@ -371,6 +467,11 @@ function rowToTransaction(row: string[]): Transaction | null {
   const locationIndex = locationRaw ? Number(locationRaw) : null;
   const detail = row[TRX_COL.detail] ?? "";
   const status = (row[TRX_COL.status] as TransactionStatus) || "draft";
+  const approvedBy = row[TRX_COL.approvedBy] ?? "";
+  const approvedAt = row[TRX_COL.approvedAt] ?? "";
+  const returnComment = row[TRX_COL.returnComment] ?? "";
+  const returnedAt = row[TRX_COL.returnedAt] ?? "";
+  const returnedBy = row[TRX_COL.returnedBy] ?? "";
 
   return {
     id: String(row[TRX_COL.id]),
@@ -388,12 +489,22 @@ function rowToTransaction(row: string[]): Transaction | null {
     area: row[TRX_COL.area] ?? "",
     date: row[TRX_COL.date] ?? "",
     status,
+    approved_by: approvedBy || undefined,
+    approved_at: approvedAt || undefined,
+    approvedBy: approvedBy || undefined,
+    approvedAt: approvedAt || undefined,
+    returnComment: returnComment || undefined,
+    return_comment: returnComment || undefined,
+    returnedAt: returnedAt || undefined,
+    returnedBy: returnedBy || undefined,
+    returned_at: returnedAt || undefined,
+    returned_by: returnedBy || undefined,
   };
 }
 
 export async function getTransactions(): Promise<Transaction[]> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const range = "Transactions!A1:K1000";
+  const range = TRX_RANGE;
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -429,7 +540,7 @@ export async function addTransaction(
   const range = "Transactions!A1";
 
   const id = `TRX_${Date.now()}`;
-  const row = Array(11).fill("");
+  const row = Array(TRX_COL_COUNT).fill("");
   row[TRX_COL.id] = id;
   row[TRX_COL.itemCode] = transaction.item_code;
   row[TRX_COL.itemName] = transaction.item_name;
@@ -444,6 +555,11 @@ export async function addTransaction(
   row[TRX_COL.area] = transaction.area;
   row[TRX_COL.date] = transaction.date;
   row[TRX_COL.status] = transaction.status;
+  row[TRX_COL.approvedBy] = transaction.approved_by ?? transaction.approvedBy ?? "";
+  row[TRX_COL.approvedAt] = transaction.approved_at ?? transaction.approvedAt ?? "";
+  row[TRX_COL.returnComment] = transaction.returnComment ?? "";
+  row[TRX_COL.returnedAt] = transaction.returnedAt ?? "";
+  row[TRX_COL.returnedBy] = transaction.returnedBy ?? "";
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
@@ -473,6 +589,14 @@ export async function updateTransaction(
       | "status"
       | "approved_by"
       | "approved_at"
+      | "approvedBy"
+      | "approvedAt"
+      | "returnComment"
+      | "return_comment"
+      | "returnedAt"
+      | "returned_at"
+      | "returnedBy"
+      | "returned_by"
       | "location_index"
       | "area"
       | "user_name"
@@ -481,7 +605,7 @@ export async function updateTransaction(
   >,
 ): Promise<void> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const range = "Transactions!A1:K1000";
+  const range = TRX_RANGE;
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -499,7 +623,7 @@ export async function updateTransaction(
   const ensureLength = (arr: unknown[], length: number) => {
     while (arr.length < length) arr.push("");
   };
-  ensureLength(nextRow, 11);
+  ensureLength(nextRow, TRX_COL_COUNT);
 
   if (updates.item_code !== undefined) nextRow[TRX_COL.itemCode] = updates.item_code;
   if (updates.item_name !== undefined) nextRow[TRX_COL.itemName] = updates.item_name;
@@ -518,8 +642,21 @@ export async function updateTransaction(
   if (updates.area !== undefined) nextRow[TRX_COL.area] = updates.area;
   if (updates.date !== undefined) nextRow[TRX_COL.date] = updates.date;
   if (updates.status !== undefined) nextRow[TRX_COL.status] = updates.status;
+  if (updates.approved_by !== undefined || updates.approvedBy !== undefined)
+    nextRow[TRX_COL.approvedBy] = updates.approved_by ?? updates.approvedBy ?? "";
+  if (updates.approved_at !== undefined || updates.approvedAt !== undefined)
+    nextRow[TRX_COL.approvedAt] = updates.approved_at ?? updates.approvedAt ?? "";
+  const returnCommentValue = updates.returnComment ?? updates.return_comment;
+  if (returnCommentValue !== undefined)
+    nextRow[TRX_COL.returnComment] = returnCommentValue ?? "";
+  const returnedAtValue = updates.returnedAt ?? updates.returned_at;
+  if (returnedAtValue !== undefined) nextRow[TRX_COL.returnedAt] = returnedAtValue ?? "";
+  const returnedByValue = updates.returnedBy ?? updates.returned_by;
+  if (returnedByValue !== undefined) nextRow[TRX_COL.returnedBy] = returnedByValue ?? "";
 
-  const updateRange = `Transactions!A${rowIndex + 2}:K${rowIndex + 2}`;
+  const updateRange = `Transactions!A${rowIndex + 2}:${columnLetterFromIndex(TRX_COL_COUNT - 1)}${
+    rowIndex + 2
+  }`;
   const values = [nextRow];
 
   await sheets.spreadsheets.values.update({
@@ -642,10 +779,19 @@ export async function addDiffLog(
 export async function updateTransactionStatus(
   id: string,
   status: TransactionStatus,
-  approved_by?: string | null,
+  actorOrOptions?: string | { actorName?: string | null; returnComment?: string | null },
 ): Promise<void> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const range = "Transactions!A1:K1000";
+  const range = TRX_RANGE;
+
+  const actorName =
+    typeof actorOrOptions === "string"
+      ? actorOrOptions
+      : actorOrOptions?.actorName ?? undefined;
+  const returnComment =
+    typeof actorOrOptions === "object" && actorOrOptions !== null
+      ? actorOrOptions.returnComment
+      : undefined;
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -658,18 +804,40 @@ export async function updateTransactionStatus(
   if (rowIndex === -1) return;
 
   const nextRow = [...(dataRows[rowIndex] || [])];
-  while (nextRow.length < 11) nextRow.push("");
+  while (nextRow.length < TRX_COL_COUNT) nextRow.push("");
+
+  const existingTx = rowToTransaction(nextRow);
+  const oldStatus = existingTx?.status;
+  const isNewlyApproved =
+    status === "approved" && oldStatus !== "approved" && oldStatus !== "locked";
+  const nowIso = new Date().toISOString();
 
   nextRow[TRX_COL.status] = status;
 
-  if (approved_by) {
-    const stamp = `${approved_by} / ${new Date().toISOString()}`;
-    nextRow[TRX_COL.detail] = nextRow[TRX_COL.detail]
-      ? `${nextRow[TRX_COL.detail]} | 承認: ${stamp}`
-      : `承認: ${stamp}`;
+  if (status === "approved") {
+    if (actorName) {
+      nextRow[TRX_COL.approvedBy] = actorName;
+      const stamp = `${actorName} / ${nowIso}`;
+      nextRow[TRX_COL.detail] = nextRow[TRX_COL.detail]
+        ? `${nextRow[TRX_COL.detail]} | 承認: ${stamp}`
+        : `承認: ${stamp}`;
+    }
+    nextRow[TRX_COL.approvedAt] = nowIso;
   }
 
-  const updateRange = `Transactions!A${rowIndex + 2}:K${rowIndex + 2}`;
+  if (status === "returned") {
+    if (returnComment !== undefined) {
+      nextRow[TRX_COL.returnComment] = returnComment;
+    }
+    if (actorName) {
+      nextRow[TRX_COL.returnedBy] = actorName;
+    }
+    nextRow[TRX_COL.returnedAt] = nowIso;
+  }
+
+  const updateRange = `Transactions!A${rowIndex + 2}:${columnLetterFromIndex(TRX_COL_COUNT - 1)}${
+    rowIndex + 2
+  }`;
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
@@ -677,6 +845,14 @@ export async function updateTransactionStatus(
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [nextRow] },
   });
+
+  if (isNewlyApproved && existingTx) {
+    try {
+      await updateStockLedgerForApprovedTransaction(existingTx);
+    } catch (error) {
+      console.error("[StockLedger] Failed to update closing_qty", error);
+    }
+  }
 }
 
 /**
@@ -730,7 +906,7 @@ export async function getStockAggregate(): Promise<
     const openingFromLedger = ledger?.openingQty ?? 0;
     const computedClosing = openingFromLedger + agg.inQty - agg.outQty;
     const closingFromLedger = ledger?.closingQty ?? 0;
-    const closingQty = closingFromLedger || computedClosing;
+    const closingQty = closingFromLedger ?? computedClosing;
 
     return {
       item_code: item.item_code,

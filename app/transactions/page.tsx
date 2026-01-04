@@ -39,6 +39,38 @@ export default function TransactionsPage() {
     fetchTransactions();
   }, []);
 
+  const formatReturnComment = (comment?: string) => {
+    if (!comment) return '';
+    return comment.length > 80 ? `${comment.slice(0, 80)}…` : comment;
+  };
+
+  const renderOutcome = (tx: TransactionView) => {
+    if (tx.status === 'approved') {
+      return (
+        <div className="space-y-1 text-sm text-gray-800">
+          <div>承認者: {tx.approved_by || tx.approvedBy || '-'}</div>
+          <div>承認日時: {tx.approved_at || tx.approvedAt || '-'}</div>
+        </div>
+      );
+    }
+
+    if (tx.status === 'returned') {
+      return (
+        <div className="space-y-1 text-sm text-gray-800">
+          <div>差し戻し: {tx.returnedBy || '-'}</div>
+          <div>日時: {tx.returnedAt || '-'}</div>
+          {tx.returnComment && (
+            <div className="text-xs text-gray-600 break-words">
+              コメント: {formatReturnComment(tx.returnComment)}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return <div className="text-sm text-gray-600">-</div>;
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navigation />
@@ -66,13 +98,15 @@ export default function TransactionsPage() {
               <table className="w-full">
                 <thead className="bg-gray-100 border-b">
                   <tr>
-                    <th className="text-left px-6 py-3 font-medium text-gray-900">日付</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-900">申請日時</th>
                     <th className="text-left px-6 py-3 font-medium text-gray-900">種別</th>
                     <th className="text-left px-6 py-3 font-medium text-gray-900">品目コード</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-900">品名</th>
                     <th className="text-left px-6 py-3 font-medium text-gray-900">数量</th>
                     <th className="text-left px-6 py-3 font-medium text-gray-900">ステータス</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-900">最終更新情報</th>
                     {session?.user?.role !== 'worker' && (
-                      <th className="text-left px-6 py-3 font-medium text-gray-900">登録者</th>
+                      <th className="text-left px-6 py-3 font-medium text-gray-900">依頼者</th>
                     )}
                     <th className="text-left px-6 py-3 font-medium text-gray-900">操作</th>
                   </tr>
@@ -82,15 +116,19 @@ export default function TransactionsPage() {
                     <tr key={tx.id || idx} className="border-b hover:bg-gray-50">
                       <td className="px-6 py-3 text-gray-900">{tx.date}</td>
                       <td className="px-6 py-3 text-gray-900">
-                        {tx.type === 'IN' ? '入荷' : '納品・出庫'}
+                        {tx.type === 'IN' ? '入庫' : '出庫'}
                       </td>
                       <td className="px-6 py-3 text-gray-900">{tx.item_code}</td>
+                      <td className="px-6 py-3 text-gray-900">{tx.item_name || '-'}</td>
                       <td className="px-6 py-3 text-gray-900">{tx.qty}</td>
                       <td className="px-6 py-3 text-gray-900">
                         <StatusBadge status={tx.status} />
                       </td>
+                      <td className="px-6 py-3 text-gray-900">{renderOutcome(tx)}</td>
                       {session?.user?.role !== 'worker' && (
-                        <td className="px-6 py-3 text-gray-900">{tx.user_name}</td>
+                        <td className="px-6 py-3 text-gray-900">
+                          {tx.user_name || tx.user_id || '-'}
+                        </td>
                       )}
                       <td className="px-6 py-3 text-gray-900">
                         {tx.id ? (
