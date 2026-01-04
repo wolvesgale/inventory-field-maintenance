@@ -139,7 +139,8 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
 
         setForm({
           date: tx.date,
-          location: tx.location ?? '',
+          // Transaction 型に location は存在しないため、編集時も空文字にしておく
+          location: '',
           itemName: tx.item_name,
           itemCode: tx.item_code ?? '',
           quantity: String(tx.qty),
