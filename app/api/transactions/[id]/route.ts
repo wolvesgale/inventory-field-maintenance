@@ -85,7 +85,20 @@ export async function PATCH(
       const approver =
         body.approvedBy || (session.user as any)?.name || (session.user as any)?.id || '';
 
-      await updateTransactionStatus(id, nextStatus as Transaction['status'], approver);
+      const returnComment =
+        typeof body.returnComment === 'string' ? body.returnComment.trim() : undefined;
+
+      if (nextStatus === 'returned' && !returnComment) {
+        return NextResponse.json(
+          { success: false, error: '差し戻しのコメントを入力してください' },
+          { status: 400 },
+        );
+      }
+
+      await updateTransactionStatus(id, nextStatus as Transaction['status'], {
+        actorName: approver,
+        returnComment: nextStatus === 'returned' ? returnComment : undefined,
+      });
 
       return NextResponse.json({ success: true, message: 'ステータスを更新しました' });
     }

@@ -92,6 +92,14 @@ export interface Transaction {
   status: TransactionStatus;
   approved_by?: string;
   approved_at?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  returnComment?: string;
+  return_comment?: string;
+  returnedAt?: string;
+  returnedBy?: string;
+  returned_at?: string;
+  returned_by?: string;
 }
 
 // ============================================================
