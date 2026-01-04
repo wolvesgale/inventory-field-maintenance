@@ -29,9 +29,13 @@ export async function GET(request: NextRequest) {
 
     // worker は基本自分の取引のみ、ただし pending 一覧は全件確認できるようにする
     if (userRole === 'worker' && statusFilter !== 'pending') {
-      filteredTransactions = filteredTransactions.filter(
-        (tx) => tx.user_id === (session.user as any).id,
-      );
+      const userId = (session.user as any).id;
+      const userName = (session.user as any).name;
+      filteredTransactions = filteredTransactions.filter((tx) => {
+        const idMatch = tx.user_id && userId && tx.user_id === userId;
+        const nameMatch = tx.user_name && userName && tx.user_name === userName;
+        return idMatch || nameMatch;
+      });
     }
 
     // ユーザー情報を関連付け

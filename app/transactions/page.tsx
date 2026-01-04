@@ -16,6 +16,7 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<TransactionView[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchTransactions = async () => {
@@ -38,6 +39,69 @@ export default function TransactionsPage() {
 
     fetchTransactions();
   }, []);
+
+  const formatDateTime = (value?: string) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString('ja-JP', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatReturnComment = (comment?: string) => {
+    if (!comment) return '';
+    return comment.length > 80 ? `${comment.slice(0, 80)}…` : comment;
+  };
+
+  const handleDelete = async (id?: string) => {
+    if (!id) return;
+    if (!window.confirm('この取引を削除しますか？')) return;
+
+    setIsDeleting(id);
+    try {
+      const res = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.success === false) {
+        throw new Error(data?.error || '削除に失敗しました');
+      }
+      setTransactions((prev) => prev.filter((tx) => tx.id !== id));
+    } catch (err) {
+      alert((err as Error).message || '削除に失敗しました');
+    } finally {
+      setIsDeleting(null);
+    }
+  };
+
+  const renderOutcome = (tx: TransactionView) => {
+    if (tx.status === 'approved') {
+      return (
+        <div className="text-xs text-gray-600 leading-snug">
+          承認済み（承認者：{tx.approved_by || tx.approvedBy || '-'} /{' '}
+          {formatDateTime(tx.approved_at || tx.approvedAt)}）
+        </div>
+      );
+    }
+
+    if (tx.status === 'returned') {
+      return (
+        <div className="text-xs text-gray-600 leading-snug space-y-0.5">
+          <div>
+            差し戻し（承認者：{tx.returnedBy || '-'} / {formatDateTime(tx.returnedAt)}）
+          </div>
+          {tx.returnComment && (
+            <div className="break-words">コメント：{formatReturnComment(tx.returnComment)}</div>
+          )}
+        </div>
+      );
+    }
+
+    return <div className="text-sm text-gray-600">-</div>;
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -66,13 +130,15 @@ export default function TransactionsPage() {
               <table className="w-full">
                 <thead className="bg-gray-100 border-b">
                   <tr>
-                    <th className="text-left px-6 py-3 font-medium text-gray-900">日付</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-900">申請日時</th>
                     <th className="text-left px-6 py-3 font-medium text-gray-900">種別</th>
                     <th className="text-left px-6 py-3 font-medium text-gray-900">品目コード</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-900">品名</th>
                     <th className="text-left px-6 py-3 font-medium text-gray-900">数量</th>
                     <th className="text-left px-6 py-3 font-medium text-gray-900">ステータス</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-900">最終更新情報</th>
                     {session?.user?.role !== 'worker' && (
-                      <th className="text-left px-6 py-3 font-medium text-gray-900">登録者</th>
+                      <th className="text-left px-6 py-3 font-medium text-gray-900">依頼者</th>
                     )}
                     <th className="text-left px-6 py-3 font-medium text-gray-900">操作</th>
                   </tr>
@@ -82,24 +148,40 @@ export default function TransactionsPage() {
                     <tr key={tx.id || idx} className="border-b hover:bg-gray-50">
                       <td className="px-6 py-3 text-gray-900">{tx.date}</td>
                       <td className="px-6 py-3 text-gray-900">
-                        {tx.type === 'IN' ? '入荷' : '納品・出庫'}
+                        {tx.type === 'IN' ? '入庫' : '出庫'}
                       </td>
                       <td className="px-6 py-3 text-gray-900">{tx.item_code}</td>
+                      <td className="px-6 py-3 text-gray-900">{tx.item_name || '-'}</td>
                       <td className="px-6 py-3 text-gray-900">{tx.qty}</td>
                       <td className="px-6 py-3 text-gray-900">
                         <StatusBadge status={tx.status} />
                       </td>
+                      <td className="px-6 py-3 text-gray-900">{renderOutcome(tx)}</td>
                       {session?.user?.role !== 'worker' && (
-                        <td className="px-6 py-3 text-gray-900">{tx.user_name}</td>
+                        <td className="px-6 py-3 text-gray-900">
+                          {tx.user_name || tx.user_id || '-'}
+                        </td>
                       )}
-                      <td className="px-6 py-3 text-gray-900">
+                      <td className="px-6 py-3 text-gray-900 whitespace-nowrap text-sm text-right">
                         {tx.id ? (
-                          <Link
-                            href={`/transactions/${tx.id}`}
-                            className="rounded border border-gray-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50"
-                          >
-                            編集
-                          </Link>
+                          <>
+                            <Link
+                              href={`/transactions/${tx.id}`}
+                              className="mr-3 rounded border border-gray-300 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50"
+                            >
+                              編集
+                            </Link>
+                            {session?.user?.role === 'manager' && tx.status !== 'approved' && (
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(tx.id)}
+                                className="text-xs font-semibold text-red-600 hover:underline disabled:text-gray-400"
+                                disabled={isDeleting === tx.id}
+                              >
+                                {isDeleting === tx.id ? '削除中...' : '削除'}
+                              </button>
+                            )}
+                          </>
                         ) : (
                           <span className="text-sm text-gray-500">-</span>
                         )}
