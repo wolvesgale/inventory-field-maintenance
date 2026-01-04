@@ -12,13 +12,11 @@ import {
 import { StatusBadge } from '@/components/StatusBadge';
 import { Transaction } from '@/types';
 
-const WAREHOUSE_OPTIONS = ['箕面', '茨木', '八尾'] as const;
 const TRANSACTION_TYPE_OPTIONS = [
   { value: 'IN', label: '入庫' },
   { value: 'OUT', label: '出庫' },
 ] as const;
 
-type WarehouseOption = (typeof WAREHOUSE_OPTIONS)[number];
 type TransactionType = (typeof TRANSACTION_TYPE_OPTIONS)[number]['value'];
 
 type ItemCandidate = {
@@ -41,7 +39,6 @@ const GROUP_BUTTONS: { key: ItemGroupKey; label: string }[] = [
 
 interface TransactionFormState {
   date: string;
-  base: WarehouseOption;
   location: string;
   itemName: string;
   itemCode: string;
@@ -52,7 +49,6 @@ interface TransactionFormState {
 
 interface TransactionRequestPayload {
   date: string;
-  base?: string;
   location?: string;
   item_code: string;
   item_name: string;
@@ -62,12 +58,12 @@ interface TransactionRequestPayload {
 }
 
 interface TransactionFormPageProps {
-  initialEditId?: string | null;
+  mode: 'create' | 'edit';
+  initialTransaction?: Transaction | null;
 }
 
 const createInitialState = (): TransactionFormState => ({
   date: new Date().toISOString().split('T')[0],
-  base: WAREHOUSE_OPTIONS[0],
   location: '',
   itemName: '',
   itemCode: '',
@@ -78,7 +74,7 @@ const createInitialState = (): TransactionFormState => ({
 
 const normalize = (value: unknown) => (value ?? '').toString();
 
-export default function TransactionFormPage({ initialEditId }: TransactionFormPageProps) {
+export default function TransactionFormPage({ mode, initialTransaction }: TransactionFormPageProps) {
   const router = useRouter();
   const { data: session, status } = useSession();
 
@@ -94,15 +90,10 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [isEditMode, setIsEditMode] = useState<boolean>(false);
-
-  const [editId, setEditId] = useState<string | null>(initialEditId ?? null);
+  const isEditMode = mode === 'edit';
   const [pendingTransactions, setPendingTransactions] = useState<Transaction[]>([]);
   const [isLoadingPending, setIsLoadingPending] = useState(false);
-
-  useEffect(() => {
-    setEditId(initialEditId ?? null);
-  }, [initialEditId]);
+  const [loadedTxMeta, setLoadedTxMeta] = useState<Transaction | null>(null);
 
   // 認証チェック
   useEffect(() => {
@@ -119,62 +110,30 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
     return () => clearTimeout(handle);
   }, [itemQuery]);
 
-  // 編集モードの初期データ取得
-  useEffect(() => {
-    if (!editId) {
-      setIsEditMode(false);
-      setForm(createInitialState());
+// 編集モードの初期データセット
+useEffect(() => {
+  if (isEditMode) {
+    if (!initialTransaction) {
+      setSubmitError('編集対象の取引が見つかりませんでした');
       return;
     }
-
-    const fetchTransaction = async () => {
-      try {
-        const res = await fetch(`/api/transactions/${editId}`);
-        if (!res.ok) {
-          throw new Error('取引情報の取得に失敗しました');
-        }
-        const data = await res.json();
-        if (!data?.success || !data?.data) {
-          throw new Error(data.error || '取引情報の取得に失敗しました');
-        }
-
-        const tx = data.data as {
-          date: string;
-          base?: string;
-          location?: string;
-          item_code?: string;
-          item_name: string;
-          qty: number;
-          type: TransactionType;
-          reason?: string;
-          initial_group?: string;
-        };
-
-        setForm({
-          date: tx.date,
-          base: (tx.base as WarehouseOption) || WAREHOUSE_OPTIONS[0],
-          location: tx.location ?? '',
-          itemName: tx.item_name,
-          itemCode: tx.item_code ?? '',
-          quantity: String(tx.qty),
-          transactionType: tx.type,
-          memo: tx.reason ?? '',
-        });
-
-        setItemQuery(tx.item_name);
-        setItemGroup(resolveGroupFromInitial(tx.initial_group));
-
-        setIsEditMode(true);
-      } catch (error) {
-        console.error(error);
-        setSubmitError(
-          error instanceof Error ? error.message : '編集対象の取引を読み込めませんでした',
-        );
-      }
-    };
-
-    fetchTransaction();
-  }, [editId]);
+    setForm({
+      date: initialTransaction.date,
+      location: '',
+      itemName: initialTransaction.item_name,
+      itemCode: initialTransaction.item_code ?? '',
+      quantity: String(initialTransaction.qty),
+      transactionType: initialTransaction.type,
+      memo: initialTransaction.reason ?? '',
+    });
+    setLoadedTxMeta(initialTransaction);
+    setItemQuery(initialTransaction.item_name);
+    setItemGroup(resolveGroupFromInitial((initialTransaction as any).initial_group));
+  } else {
+    setForm(createInitialState());
+    setLoadedTxMeta(null);
+  }
+}, [isEditMode, initialTransaction]);
 
   // 品目サジェスト取得
   useEffect(() => {
@@ -317,6 +276,8 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
     );
   }
 
+  const isReadOnly = isEditMode && loadedTxMeta?.status === 'approved';
+
   const handleFieldChange =
     (field: keyof TransactionFormState) => (value: string) => {
       setForm((prev) => ({
@@ -328,6 +289,11 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitError(null);
+
+    if (isReadOnly) {
+      setSubmitError('承認済みの取引は編集できません');
+      return;
+    }
 
     if (!form.date) {
       setSubmitError('日付を選択してください');
@@ -344,6 +310,11 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
       return;
     }
 
+    if (isEditMode && !initialTransaction?.id) {
+      setSubmitError('編集対象の取引が指定されていません');
+      return;
+    }
+
     const qty = Number(form.quantity);
     if (!Number.isFinite(qty) || qty === 0) {
       setSubmitError('数量は0以外の数値を入力してください');
@@ -351,22 +322,29 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
     }
 
     const normalizedType: TransactionType = qty > 0 ? 'IN' : 'OUT';
-    const payload: TransactionRequestPayload = {
-      date: form.date,
-      base: form.base,
-      location: form.location.trim() || undefined,
-      item_code: form.itemCode.trim(),
-      item_name: form.itemName.trim(),
-      qty: Math.abs(qty),
-      type: normalizedType,
-      reason: form.memo.trim() || undefined,
-    };
+    const payload: Partial<TransactionRequestPayload> = isEditMode
+      ? {
+          item_code: form.itemCode.trim(),
+          item_name: form.itemName.trim(),
+          qty: Math.abs(qty),
+          type: normalizedType,
+        }
+      : {
+          date: form.date,
+          location: form.location.trim() || undefined,
+          item_code: form.itemCode.trim(),
+          item_name: form.itemName.trim(),
+          qty: Math.abs(qty),
+          type: normalizedType,
+          reason: form.memo.trim() || undefined,
+        };
 
     setIsSubmitting(true);
 
     try {
-      const url = isEditMode && editId ? `/api/transactions/${editId}` : '/api/transactions/new';
-      const method = isEditMode && editId ? 'PATCH' : 'POST';
+      const targetId = initialTransaction?.id;
+      const url = isEditMode && targetId ? `/api/transactions/${targetId}` : '/api/transactions/new';
+      const method = isEditMode && targetId ? 'PATCH' : 'POST';
 
       const res = await fetch(url, {
         method,
@@ -414,11 +392,46 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
             ダッシュボードへ戻る
           </button>
         </div>
+        {session?.user?.area && (
+          <p className="mb-4 text-sm text-gray-700">
+            ログイン拠点: <span className="font-semibold">{session.user.area}</span>
+          </p>
+        )}
 
         <div className="bg-white rounded-xl shadow p-6">
           {submitError && (
             <div className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {submitError}
+            </div>
+          )}
+
+          {isEditMode && loadedTxMeta && (
+            <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <div className="flex flex-wrap items-center gap-3 text-sm text-gray-900">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">ステータス:</span>
+                  <StatusBadge status={loadedTxMeta.status} />
+                </div>
+                <div>
+                  <span className="font-semibold">依頼者:</span>{' '}
+                  {loadedTxMeta.user_name || loadedTxMeta.user_id || '-'}
+                </div>
+                <div>
+                  <span className="font-semibold">拠点:</span> {loadedTxMeta.area || '-'}
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3 text-sm text-gray-800 sm:grid-cols-2">
+                <div>承認者: {loadedTxMeta.approved_by || loadedTxMeta.approvedBy || '-'}</div>
+                <div>承認日時: {loadedTxMeta.approved_at || loadedTxMeta.approvedAt || '-'}</div>
+                <div>差し戻し: {loadedTxMeta.returnedBy || '-'}</div>
+                <div>差し戻し日時: {loadedTxMeta.returnedAt || '-'}</div>
+              </div>
+              {loadedTxMeta.returnComment && (
+                <div className="mt-3 text-sm text-gray-800">
+                  <div className="font-semibold">差し戻しコメント</div>
+                  <p className="mt-1 whitespace-pre-wrap break-words">{loadedTxMeta.returnComment}</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -435,28 +448,8 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
                 onChange={(event) => handleFieldChange('date')(event.target.value)}
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 required
-                disabled={isFormDisabled}
+                disabled={isFormDisabled || isEditMode}
               />
-            </div>
-
-            {/* 拠点 */}
-            <div>
-              <label htmlFor="base" className="mb-2 block text-sm font-medium text-gray-700">
-                拠点
-              </label>
-              <select
-                id="base"
-                value={form.base}
-                onChange={(event) => handleFieldChange('base')(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                disabled={isFormDisabled}
-              >
-                {WAREHOUSE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
             </div>
 
             {/* 保管場所 */}
@@ -471,7 +464,7 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
                 onChange={(event) => handleFieldChange('location')(event.target.value)}
                 placeholder="例：冷蔵庫、棚番号など"
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                disabled={isFormDisabled}
+                disabled={isFormDisabled || isEditMode}
               />
             </div>
 
@@ -488,7 +481,7 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
                         ? 'border-blue-500 bg-blue-50 text-blue-600'
                         : 'border-gray-300 bg-white text-gray-700'
                     }`}
-                    disabled={isFormDisabled}
+                    disabled={isFormDisabled || isReadOnly}
                   >
                     {group.label}
                   </button>
@@ -508,7 +501,7 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
                   placeholder="品目名または品目コードで検索"
                   className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   required
-                  disabled={isFormDisabled}
+                  disabled={isFormDisabled || isReadOnly}
                   onFocus={() => {
                     if (itemCandidates.length > 0) setShowItemDropdown(true);
                   }}
@@ -578,7 +571,7 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
                 placeholder="例：10 または -3"
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 step="1"
-                disabled={isFormDisabled}
+                disabled={isFormDisabled || isReadOnly}
               />
             </div>
 
@@ -597,7 +590,7 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
                   handleFieldChange('transactionType')(event.target.value as TransactionType)
                 }
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                disabled={isFormDisabled}
+                disabled={isFormDisabled || isReadOnly || isEditMode}
               >
                 {TRANSACTION_TYPE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -619,23 +612,30 @@ export default function TransactionFormPage({ initialEditId }: TransactionFormPa
                 rows={4}
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 placeholder="特記事項があれば入力"
-                disabled={isFormDisabled}
+                disabled={isFormDisabled || isEditMode || isReadOnly}
               />
             </div>
 
             {/* ボタン */}
+            {isReadOnly && (
+              <div className="rounded border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+                承認済みの取引は編集できません。
+              </div>
+            )}
             <div className="flex gap-3">
-              <button
-                type="submit"
-                className="flex-1 rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
-                disabled={isSubmitting || isFormDisabled}
-              >
-                {isSubmitting
-                  ? '送信中...'
-                  : isEditMode
-                  ? 'この内容で更新する'
-                  : 'この内容で登録する'}
-              </button>
+              {!isReadOnly && (
+                <button
+                  type="submit"
+                  className="flex-1 rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                  disabled={isSubmitting || isFormDisabled}
+                >
+                  {isSubmitting
+                    ? '送信中...'
+                    : isEditMode
+                    ? 'この内容で更新する'
+                    : 'この内容で登録する'}
+                </button>
+              )}
               {!isEditMode && (
                 <button
                   type="button"

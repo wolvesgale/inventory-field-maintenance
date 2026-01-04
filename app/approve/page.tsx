@@ -7,7 +7,6 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Navigation } from '@/components/Navigation';
-import { StatusBadge } from '@/components/StatusBadge';
 import { Transaction } from '@/types';
 
 export default function ApprovePage() {
@@ -16,6 +15,12 @@ export default function ApprovePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [returnModalOpen, setReturnModalOpen] = useState(false);
+  const [returnComment, setReturnComment] = useState('');
+  const [returnTargetIds, setReturnTargetIds] = useState<string[]>([]);
+  const [returnTargetNames, setReturnTargetNames] = useState<string[]>([]);
+  const [returnError, setReturnError] = useState('');
+  const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
 
   useEffect(() => {
     const fetchTransactions = async () => {
@@ -51,7 +56,11 @@ export default function ApprovePage() {
     });
   };
 
-  const updateStatus = async (id: string, status: 'approved' | 'returned') => {
+  const updateStatus = async (
+    id: string,
+    status: 'approved' | 'returned',
+    options?: { returnComment?: string },
+  ) => {
     const response = await fetch(`/api/transactions/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -59,6 +68,7 @@ export default function ApprovePage() {
         mode: 'status',
         status,
         approvedBy: session?.user?.name ?? session?.user?.login_id ?? '',
+        returnComment: options?.returnComment,
       }),
     });
 
@@ -68,10 +78,9 @@ export default function ApprovePage() {
     }
   };
 
-  const handleApprove = async (id: string, action: 'approve' | 'reject') => {
+  const handleApprove = async (id: string) => {
     try {
-      const status = action === 'approve' ? 'approved' : 'returned';
-      await updateStatus(id, status);
+      await updateStatus(id, 'approved');
 
       setTransactions(prev => prev.filter(tx => tx.id !== id));
       setSelectedIds((prev) => {
@@ -113,6 +122,93 @@ export default function ApprovePage() {
     }
   };
 
+  const openReturnModal = (ids: string[], requesterNames: string[]) => {
+    const validIds = ids.filter(Boolean);
+    if (validIds.length === 0) return;
+
+    const uniqueNames = Array.from(new Set(requesterNames.filter(Boolean)));
+    setReturnTargetIds(validIds);
+    setReturnTargetNames(uniqueNames);
+    setReturnComment('');
+    setReturnError('');
+    setReturnModalOpen(true);
+  };
+
+  const handleReturnClick = (tx: Transaction) => {
+    openReturnModal([tx.id || ''], [tx.user_name || tx.user_id || '']);
+  };
+
+  const handleBatchReturn = () => {
+    if (selectedIds.size === 0) {
+      alert('差し戻す取引を選択してください');
+      return;
+    }
+
+    const ids = Array.from(selectedIds).filter(Boolean);
+    const names = transactions
+      .filter((tx) => tx.id && selectedIds.has(tx.id))
+      .map((tx) => tx.user_name || tx.user_id || '');
+
+    openReturnModal(ids, names);
+  };
+
+  const handleSubmitReturn = async () => {
+    const comment = returnComment.trim();
+    if (!comment) {
+      setReturnError('差し戻しコメントを入力してください');
+      return;
+    }
+
+    setIsSubmittingReturn(true);
+    const succeededIds: string[] = [];
+
+    try {
+      for (const id of returnTargetIds) {
+        try {
+          await updateStatus(id, 'returned', { returnComment: comment });
+          succeededIds.push(id);
+        } catch (err) {
+          console.error('[return] failed', id, err);
+        }
+      }
+
+      if (succeededIds.length > 0) {
+        setTransactions((prev) => prev.filter((tx) => !succeededIds.includes(tx.id || '')));
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          succeededIds.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
+
+      if (succeededIds.length === returnTargetIds.length) {
+        setReturnModalOpen(false);
+      } else {
+        setReturnError('一部の差し戻しに失敗しました。');
+      }
+    } finally {
+      setIsSubmittingReturn(false);
+    }
+  };
+
+  const buildDateLabel = (tx: Transaction) => {
+    let dateLabel = tx.date;
+    try {
+      const parts = String(tx.id).split('_');
+      if (parts.length === 2) {
+        const createdAt = new Date(Number(parts[1]));
+        const timePart = createdAt.toLocaleTimeString('ja-JP', {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        dateLabel = `${tx.date} ${timePart}`;
+      }
+    } catch {
+      // fallback to tx.date
+    }
+    return dateLabel;
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navigation />
@@ -122,13 +218,22 @@ export default function ApprovePage() {
           <div className="px-6 py-4 border-b flex justify-between items-center">
             <h1 className="text-2xl font-bold">承認待ち取引</h1>
             {transactions.length > 0 && (
-              <button
-                onClick={handleBatchApprove}
-                disabled={selectedIds.size === 0}
-                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded"
-              >
-                選択した {selectedIds.size} 件を一括承認
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleBatchApprove}
+                  disabled={selectedIds.size === 0}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded"
+                >
+                  選択した {selectedIds.size} 件を一括承認
+                </button>
+                <button
+                  onClick={handleBatchReturn}
+                  disabled={selectedIds.size === 0}
+                  className="bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded"
+                >
+                  選択した {selectedIds.size} 件を一括差し戻し
+                </button>
+              </div>
             )}
           </div>
 
@@ -162,7 +267,9 @@ export default function ApprovePage() {
                       />
                     </th>
                     <th className="text-left px-6 py-3 font-medium">日付</th>
+                    <th className="text-left px-6 py-3 font-medium">依頼者</th>
                     <th className="text-left px-6 py-3 font-medium">品目コード</th>
+                    <th className="text-left px-6 py-3 font-medium">品名</th>
                     <th className="text-left px-6 py-3 font-medium">数量</th>
                     <th className="text-left px-6 py-3 font-medium">種別</th>
                     <th className="text-left px-6 py-3 font-medium">アクション</th>
@@ -179,21 +286,23 @@ export default function ApprovePage() {
                           className="w-4 h-4"
                         />
                       </td>
-                      <td className="px-6 py-3">{tx.date}</td>
+                      <td className="px-6 py-3">{buildDateLabel(tx)}</td>
+                      <td className="px-6 py-3">{tx.user_name || tx.user_id}</td>
                       <td className="px-6 py-3">{tx.item_code}</td>
+                      <td className="px-6 py-3">{tx.item_name}</td>
                       <td className="px-6 py-3">{tx.qty}</td>
                       <td className="px-6 py-3">
-                        {tx.type === 'IN' ? '入荷' : '納品・出庫'}
+                        {tx.type === 'IN' ? '入庫' : '出庫'}
                       </td>
                       <td className="px-6 py-3 space-x-2">
                         <button
-                          onClick={() => handleApprove(tx.id || '', 'approve')}
+                          onClick={() => handleApprove(tx.id || '')}
                           className="bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded text-sm"
                         >
                           承認
                         </button>
                         <button
-                          onClick={() => handleApprove(tx.id || '', 'reject')}
+                          onClick={() => handleReturnClick(tx)}
                           className="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded text-sm"
                         >
                           差し戻し
@@ -207,6 +316,67 @@ export default function ApprovePage() {
           )}
         </div>
       </main>
+
+      {returnModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-bold text-gray-900 mb-3">差し戻し</h2>
+            <p className="text-sm text-gray-700">
+              対象件数: <span className="font-semibold">{returnTargetIds.length}</span> 件
+            </p>
+            <div className="mt-3">
+              <div className="text-sm font-semibold text-gray-800">依頼者</div>
+              <ul className="mt-1 list-inside list-disc text-sm text-gray-700">
+                {(returnTargetNames.length > 0 ? returnTargetNames : ['情報なし']).map(
+                  (name, idx) => (
+                    <li key={`${name}-${idx}`}>{name || '情報なし'}</li>
+                  ),
+                )}
+              </ul>
+            </div>
+
+            <div className="mt-4">
+              <label
+                htmlFor="return-comment"
+                className="mb-1 block text-sm font-medium text-gray-800"
+              >
+                差し戻しコメント（必須）
+              </label>
+              <textarea
+                id="return-comment"
+                value={returnComment}
+                onChange={(e) => setReturnComment(e.target.value)}
+                className="w-full rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                rows={4}
+                required
+              />
+              {returnError && <p className="mt-1 text-sm text-red-600">{returnError}</p>}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isSubmittingReturn) return;
+                  setReturnModalOpen(false);
+                }}
+                className="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-70"
+                disabled={isSubmittingReturn}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitReturn}
+                className="rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:bg-gray-400"
+                disabled={isSubmittingReturn}
+              >
+                {isSubmittingReturn ? '送信中...' : '差し戻す'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
