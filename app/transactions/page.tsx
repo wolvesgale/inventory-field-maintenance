@@ -39,6 +39,19 @@ export default function TransactionsPage() {
     fetchTransactions();
   }, []);
 
+  const formatDateTime = (value?: string) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString('ja-JP', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   const formatReturnComment = (comment?: string) => {
     if (!comment) return '';
     return comment.length > 80 ? `${comment.slice(0, 80)}…` : comment;
@@ -47,22 +60,21 @@ export default function TransactionsPage() {
   const renderOutcome = (tx: TransactionView) => {
     if (tx.status === 'approved') {
       return (
-        <div className="space-y-1 text-sm text-gray-800">
-          <div>承認者: {tx.approved_by || tx.approvedBy || '-'}</div>
-          <div>承認日時: {tx.approved_at || tx.approvedAt || '-'}</div>
+        <div className="text-xs text-gray-600 leading-snug">
+          承認済み（承認者：{tx.approved_by || tx.approvedBy || '-'} /{' '}
+          {formatDateTime(tx.approved_at || tx.approvedAt)}）
         </div>
       );
     }
 
     if (tx.status === 'returned') {
       return (
-        <div className="space-y-1 text-sm text-gray-800">
-          <div>差し戻し: {tx.returnedBy || '-'}</div>
-          <div>日時: {tx.returnedAt || '-'}</div>
+        <div className="text-xs text-gray-600 leading-snug space-y-0.5">
+          <div>
+            差し戻し（承認者：{tx.returnedBy || '-'} / {formatDateTime(tx.returnedAt)}）
+          </div>
           {tx.returnComment && (
-            <div className="text-xs text-gray-600 break-words">
-              コメント: {formatReturnComment(tx.returnComment)}
-            </div>
+            <div className="break-words">コメント：{formatReturnComment(tx.returnComment)}</div>
           )}
         </div>
       );

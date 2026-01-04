@@ -80,6 +80,27 @@ const TRX_COL = {
   returnedBy: 15,
 } as const;
 
+type TransactionColumnMap = {
+  id: number;
+  itemCode: number;
+  itemName: number;
+  type: number;
+  qty: number;
+  detail: number;
+  locationIndex: number;
+  createdBy: number;
+  area: number;
+  date: number;
+  status: number;
+  approvedBy: number;
+  approvedAt: number;
+  returnComment: number;
+  returnedAt: number;
+  returnedBy: number;
+  userId?: number;
+  userName?: number;
+};
+
 const TRX_COL_COUNT = Object.keys(TRX_COL).length;
 
 function columnLetterFromIndex(index: number): string {
@@ -93,7 +114,83 @@ function columnLetterFromIndex(index: number): string {
   return result;
 }
 
-const TRX_RANGE = `Transactions!A1:${columnLetterFromIndex(TRX_COL_COUNT - 1)}1000`;
+function normalizeHeaderKey(key: string): string {
+  return key.replace(/[\s_-]/g, "").toLowerCase();
+}
+
+function buildTransactionColumnMap(
+  header?: string[]
+): { map: TransactionColumnMap; totalColumns: number } {
+  const normalized = (header ?? []).map((h) => normalizeHeaderKey(h));
+  const findIndex = (candidates: string[]): number | undefined => {
+    for (const key of candidates) {
+      const idx = normalized.indexOf(key);
+      if (idx !== -1) return idx;
+    }
+    return undefined;
+  };
+
+  const map: TransactionColumnMap = {
+    id: findIndex(["id"]) ?? TRX_COL.id,
+    itemCode: findIndex(["itemcode", "item_code"]) ?? TRX_COL.itemCode,
+    itemName: findIndex(["itemname", "item_name"]) ?? TRX_COL.itemName,
+    type: findIndex(["type"]) ?? TRX_COL.type,
+    qty: findIndex(["qty", "quantity"]) ?? TRX_COL.qty,
+    detail: findIndex(["detail", "reason", "memo"]) ?? TRX_COL.detail,
+    locationIndex:
+      findIndex(["locationindex", "location_index"]) ?? TRX_COL.locationIndex,
+    createdBy:
+      findIndex([
+        "createdby",
+        "created_by",
+        "requestedby",
+        "requested_by",
+        "username",
+        "user_name",
+      ]) ?? TRX_COL.createdBy,
+    area: findIndex(["area"]) ?? TRX_COL.area,
+    date: findIndex(["date"]) ?? TRX_COL.date,
+    status: findIndex(["status"]) ?? TRX_COL.status,
+    approvedBy:
+      findIndex(["approvedby", "approved_by"]) ?? TRX_COL.approvedBy,
+    approvedAt:
+      findIndex(["approvedat", "approved_at"]) ?? TRX_COL.approvedAt,
+    returnComment:
+      findIndex(["returncomment", "return_comment"]) ??
+      TRX_COL.returnComment,
+    returnedAt:
+      findIndex(["returnedat", "returned_at"]) ?? TRX_COL.returnedAt,
+    returnedBy:
+      findIndex(["returnedby", "returned_by"]) ?? TRX_COL.returnedBy,
+  };
+
+  const userIdIdx = findIndex(["userid", "user_id", "user id"]);
+  if (userIdIdx !== undefined) {
+    map.userId = userIdIdx;
+  }
+  const userNameIdx = findIndex([
+    "user_name",
+    "username",
+    "user name",
+    "requestedby",
+    "requested_by",
+  ]);
+  if (userNameIdx !== undefined) {
+    map.userName = userNameIdx;
+  } else {
+    map.userName = map.createdBy;
+  }
+
+  const maxIndex = Math.max(
+    ...Object.values(map)
+      .filter((v): v is number => typeof v === "number")
+      .map((v) => v + 1)
+  );
+  const headerLength = header?.length ?? 0;
+  const totalColumns = Math.max(TRX_COL_COUNT, maxIndex, headerLength);
+
+  return { map, totalColumns };
+}
 
 export type PhysicalCount = {
   id: string;
@@ -458,36 +555,42 @@ export async function getItems(): Promise<InventoryItem[]> {
 /**
  * 全トランザクションを取得
  */
-function rowToTransaction(row: string[]): Transaction | null {
-  if (!row[TRX_COL.id]) return null;
+function rowToTransaction(
+  row: string[],
+  colMap: TransactionColumnMap
+): Transaction | null {
+  if (!row[colMap.id]) return null;
 
-  const qtyRaw = Number(row[TRX_COL.qty] ?? 0);
+  const qtyRaw = Number(row[colMap.qty] ?? 0);
   const qty = Number.isFinite(qtyRaw) ? qtyRaw : 0;
-  const locationRaw = row[TRX_COL.locationIndex];
+  const locationRaw = row[colMap.locationIndex];
   const locationIndex = locationRaw ? Number(locationRaw) : null;
-  const detail = row[TRX_COL.detail] ?? "";
-  const status = (row[TRX_COL.status] as TransactionStatus) || "draft";
-  const approvedBy = row[TRX_COL.approvedBy] ?? "";
-  const approvedAt = row[TRX_COL.approvedAt] ?? "";
-  const returnComment = row[TRX_COL.returnComment] ?? "";
-  const returnedAt = row[TRX_COL.returnedAt] ?? "";
-  const returnedBy = row[TRX_COL.returnedBy] ?? "";
+  const detail = row[colMap.detail] ?? "";
+  const status = (row[colMap.status] as TransactionStatus) || "draft";
+  const approvedBy = row[colMap.approvedBy] ?? "";
+  const approvedAt = row[colMap.approvedAt] ?? "";
+  const returnComment = row[colMap.returnComment] ?? "";
+  const returnedAt = row[colMap.returnedAt] ?? "";
+  const returnedBy = row[colMap.returnedBy] ?? "";
+  const userId = colMap.userId !== undefined ? row[colMap.userId] ?? "" : "";
+  const userNameIndex = colMap.userName ?? colMap.createdBy;
+  const userName = row[userNameIndex] ?? "";
 
   return {
-    id: String(row[TRX_COL.id]),
-    item_code: String(row[TRX_COL.itemCode] ?? ""),
-    item_name: String(row[TRX_COL.itemName] ?? ""),
-    type: (row[TRX_COL.type] as Transaction["type"]) || "IN",
+    id: String(row[colMap.id]),
+    item_code: String(row[colMap.itemCode] ?? ""),
+    item_name: String(row[colMap.itemName] ?? ""),
+    type: (row[colMap.type] as Transaction["type"]) || "IN",
     qty,
     detail,
     reason: detail,
     location_index: Number.isFinite(locationIndex as number)
       ? locationIndex
       : null,
-    user_id: row[TRX_COL.createdBy] ?? "",
-    user_name: row[TRX_COL.createdBy] ?? "",
-    area: row[TRX_COL.area] ?? "",
-    date: row[TRX_COL.date] ?? "",
+    user_id: userId,
+    user_name: userName,
+    area: row[colMap.area] ?? "",
+    date: row[colMap.date] ?? "",
     status,
     approved_by: approvedBy || undefined,
     approved_at: approvedAt || undefined,
@@ -504,7 +607,7 @@ function rowToTransaction(row: string[]): Transaction | null {
 
 export async function getTransactions(): Promise<Transaction[]> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const range = TRX_RANGE;
+  const range = "Transactions!A1:Z1000";
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -514,9 +617,12 @@ export async function getTransactions(): Promise<Transaction[]> {
   const rows = res.data.values || [];
   if (rows.length < 2) return [];
 
+  const header = rows[0] ?? [];
+  const { map: colMap } = buildTransactionColumnMap(header);
+
   const transactions = rows
     .slice(1)
-    .map((row) => rowToTransaction(row))
+    .map((row) => rowToTransaction(row, colMap))
     .filter((tx): tx is Transaction => Boolean(tx));
 
   return transactions;
@@ -537,29 +643,41 @@ export async function addTransaction(
   transaction: Omit<Transaction, "id">
 ): Promise<string> {
   const { sheets, spreadsheetId } = getSheetsClient();
+  const headerRes = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "Transactions!1:1",
+  });
+  const header = headerRes.data.values?.[0] ?? [];
+  const { map: colMap, totalColumns } = buildTransactionColumnMap(header);
   const range = "Transactions!A1";
 
   const id = `TRX_${Date.now()}`;
-  const row = Array(TRX_COL_COUNT).fill("");
-  row[TRX_COL.id] = id;
-  row[TRX_COL.itemCode] = transaction.item_code;
-  row[TRX_COL.itemName] = transaction.item_name;
-  row[TRX_COL.type] = transaction.type;
-  row[TRX_COL.qty] = transaction.qty;
-  row[TRX_COL.detail] = transaction.detail || transaction.reason || "";
-  row[TRX_COL.locationIndex] =
+  const row = Array(totalColumns).fill("");
+  row[colMap.id] = id;
+  row[colMap.itemCode] = transaction.item_code;
+  row[colMap.itemName] = transaction.item_name;
+  row[colMap.type] = transaction.type;
+  row[colMap.qty] = transaction.qty;
+  row[colMap.detail] = transaction.detail || transaction.reason || "";
+  row[colMap.locationIndex] =
     transaction.location_index !== undefined && transaction.location_index !== null
       ? transaction.location_index
       : "";
-  row[TRX_COL.createdBy] = transaction.user_name || transaction.user_id || "";
-  row[TRX_COL.area] = transaction.area;
-  row[TRX_COL.date] = transaction.date;
-  row[TRX_COL.status] = transaction.status;
-  row[TRX_COL.approvedBy] = transaction.approved_by ?? transaction.approvedBy ?? "";
-  row[TRX_COL.approvedAt] = transaction.approved_at ?? transaction.approvedAt ?? "";
-  row[TRX_COL.returnComment] = transaction.returnComment ?? "";
-  row[TRX_COL.returnedAt] = transaction.returnedAt ?? "";
-  row[TRX_COL.returnedBy] = transaction.returnedBy ?? "";
+  const userNameIndex = colMap.userName ?? colMap.createdBy;
+  if (userNameIndex !== undefined) {
+    row[userNameIndex] = transaction.user_name || transaction.user_id || "";
+  }
+  if (colMap.userId !== undefined) {
+    row[colMap.userId] = transaction.user_id || "";
+  }
+  row[colMap.area] = transaction.area;
+  row[colMap.date] = transaction.date;
+  row[colMap.status] = transaction.status;
+  row[colMap.approvedBy] = transaction.approved_by ?? transaction.approvedBy ?? "";
+  row[colMap.approvedAt] = transaction.approved_at ?? transaction.approvedAt ?? "";
+  row[colMap.returnComment] = transaction.returnComment ?? "";
+  row[colMap.returnedAt] = transaction.returnedAt ?? "";
+  row[colMap.returnedBy] = transaction.returnedBy ?? "";
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
@@ -605,7 +723,7 @@ export async function updateTransaction(
   >,
 ): Promise<void> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const range = TRX_RANGE;
+  const range = "Transactions!A1:Z1000";
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -615,48 +733,53 @@ export async function updateTransaction(
   const rows = res.data.values || [];
   if (rows.length < 2) return;
 
+  const header = rows[0] ?? [];
+  const { map: colMap, totalColumns } = buildTransactionColumnMap(header);
+
   const dataRows = rows.slice(1);
-  const rowIndex = dataRows.findIndex((r) => r[TRX_COL.id] === id);
+  const rowIndex = dataRows.findIndex((r) => r[colMap.id] === id);
   if (rowIndex === -1) return;
 
   const nextRow = [...(dataRows[rowIndex] || [])];
   const ensureLength = (arr: unknown[], length: number) => {
     while (arr.length < length) arr.push("");
   };
-  ensureLength(nextRow, TRX_COL_COUNT);
+  ensureLength(nextRow, totalColumns);
 
-  if (updates.item_code !== undefined) nextRow[TRX_COL.itemCode] = updates.item_code;
-  if (updates.item_name !== undefined) nextRow[TRX_COL.itemName] = updates.item_name;
-  if (updates.type !== undefined) nextRow[TRX_COL.type] = updates.type;
-  if (updates.qty !== undefined) nextRow[TRX_COL.qty] = updates.qty;
+  if (updates.item_code !== undefined) nextRow[colMap.itemCode] = updates.item_code;
+  if (updates.item_name !== undefined) nextRow[colMap.itemName] = updates.item_name;
+  if (updates.type !== undefined) nextRow[colMap.type] = updates.type;
+  if (updates.qty !== undefined) nextRow[colMap.qty] = updates.qty;
   const detailValue = updates.detail ?? updates.reason;
-  if (detailValue !== undefined) nextRow[TRX_COL.detail] = detailValue ?? "";
+  if (detailValue !== undefined) nextRow[colMap.detail] = detailValue ?? "";
   if (updates.location_index !== undefined)
-    nextRow[TRX_COL.locationIndex] =
+    nextRow[colMap.locationIndex] =
       updates.location_index !== null && updates.location_index !== undefined
         ? updates.location_index
         : "";
   if (updates.user_name !== undefined || updates.user_id !== undefined) {
-    nextRow[TRX_COL.createdBy] = updates.user_name || updates.user_id || "";
+    const userNameIndex = colMap.userName ?? colMap.createdBy;
+    nextRow[userNameIndex] = updates.user_name || updates.user_id || "";
+    if (colMap.userId !== undefined && updates.user_id !== undefined) {
+      nextRow[colMap.userId] = updates.user_id;
+    }
   }
-  if (updates.area !== undefined) nextRow[TRX_COL.area] = updates.area;
-  if (updates.date !== undefined) nextRow[TRX_COL.date] = updates.date;
-  if (updates.status !== undefined) nextRow[TRX_COL.status] = updates.status;
+  if (updates.area !== undefined) nextRow[colMap.area] = updates.area;
+  if (updates.date !== undefined) nextRow[colMap.date] = updates.date;
+  if (updates.status !== undefined) nextRow[colMap.status] = updates.status;
   if (updates.approved_by !== undefined || updates.approvedBy !== undefined)
-    nextRow[TRX_COL.approvedBy] = updates.approved_by ?? updates.approvedBy ?? "";
+    nextRow[colMap.approvedBy] = updates.approved_by ?? updates.approvedBy ?? "";
   if (updates.approved_at !== undefined || updates.approvedAt !== undefined)
-    nextRow[TRX_COL.approvedAt] = updates.approved_at ?? updates.approvedAt ?? "";
+    nextRow[colMap.approvedAt] = updates.approved_at ?? updates.approvedAt ?? "";
   const returnCommentValue = updates.returnComment ?? updates.return_comment;
   if (returnCommentValue !== undefined)
-    nextRow[TRX_COL.returnComment] = returnCommentValue ?? "";
+    nextRow[colMap.returnComment] = returnCommentValue ?? "";
   const returnedAtValue = updates.returnedAt ?? updates.returned_at;
-  if (returnedAtValue !== undefined) nextRow[TRX_COL.returnedAt] = returnedAtValue ?? "";
+  if (returnedAtValue !== undefined) nextRow[colMap.returnedAt] = returnedAtValue ?? "";
   const returnedByValue = updates.returnedBy ?? updates.returned_by;
-  if (returnedByValue !== undefined) nextRow[TRX_COL.returnedBy] = returnedByValue ?? "";
+  if (returnedByValue !== undefined) nextRow[colMap.returnedBy] = returnedByValue ?? "";
 
-  const updateRange = `Transactions!A${rowIndex + 2}:${columnLetterFromIndex(TRX_COL_COUNT - 1)}${
-    rowIndex + 2
-  }`;
+  const updateRange = `Transactions!A${rowIndex + 2}:${columnLetterFromIndex(totalColumns - 1)}${rowIndex + 2}`;
   const values = [nextRow];
 
   await sheets.spreadsheets.values.update({
@@ -782,7 +905,7 @@ export async function updateTransactionStatus(
   actorOrOptions?: string | { actorName?: string | null; returnComment?: string | null },
 ): Promise<void> {
   const { sheets, spreadsheetId } = getSheetsClient();
-  const range = TRX_RANGE;
+  const range = "Transactions!A1:Z1000";
 
   const actorName =
     typeof actorOrOptions === "string"
@@ -799,43 +922,45 @@ export async function updateTransactionStatus(
   });
 
   const rows = res.data.values || [];
+  const header = rows[0] ?? [];
+  const { map: colMap, totalColumns } = buildTransactionColumnMap(header);
   const dataRows = rows.slice(1);
-  const rowIndex = dataRows.findIndex((r) => r[TRX_COL.id] === id);
+  const rowIndex = dataRows.findIndex((r) => r[colMap.id] === id);
   if (rowIndex === -1) return;
 
   const nextRow = [...(dataRows[rowIndex] || [])];
-  while (nextRow.length < TRX_COL_COUNT) nextRow.push("");
+  while (nextRow.length < totalColumns) nextRow.push("");
 
-  const existingTx = rowToTransaction(nextRow);
+  const existingTx = rowToTransaction(nextRow, colMap);
   const oldStatus = existingTx?.status;
   const isNewlyApproved =
     status === "approved" && oldStatus !== "approved" && oldStatus !== "locked";
   const nowIso = new Date().toISOString();
 
-  nextRow[TRX_COL.status] = status;
+  nextRow[colMap.status] = status;
 
   if (status === "approved") {
     if (actorName) {
-      nextRow[TRX_COL.approvedBy] = actorName;
+      nextRow[colMap.approvedBy] = actorName;
       const stamp = `${actorName} / ${nowIso}`;
-      nextRow[TRX_COL.detail] = nextRow[TRX_COL.detail]
-        ? `${nextRow[TRX_COL.detail]} | 承認: ${stamp}`
+      nextRow[colMap.detail] = nextRow[colMap.detail]
+        ? `${nextRow[colMap.detail]} | 承認: ${stamp}`
         : `承認: ${stamp}`;
     }
-    nextRow[TRX_COL.approvedAt] = nowIso;
+    nextRow[colMap.approvedAt] = nowIso;
   }
 
   if (status === "returned") {
     if (returnComment !== undefined) {
-      nextRow[TRX_COL.returnComment] = returnComment;
+      nextRow[colMap.returnComment] = returnComment;
     }
     if (actorName) {
-      nextRow[TRX_COL.returnedBy] = actorName;
+      nextRow[colMap.returnedBy] = actorName;
     }
-    nextRow[TRX_COL.returnedAt] = nowIso;
+    nextRow[colMap.returnedAt] = nowIso;
   }
 
-  const updateRange = `Transactions!A${rowIndex + 2}:${columnLetterFromIndex(TRX_COL_COUNT - 1)}${
+  const updateRange = `Transactions!A${rowIndex + 2}:${columnLetterFromIndex(totalColumns - 1)}${
     rowIndex + 2
   }`;
 

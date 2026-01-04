@@ -191,6 +191,24 @@ export default function ApprovePage() {
     }
   };
 
+  const buildDateLabel = (tx: Transaction) => {
+    let dateLabel = tx.date;
+    try {
+      const parts = String(tx.id).split('_');
+      if (parts.length === 2) {
+        const createdAt = new Date(Number(parts[1]));
+        const timePart = createdAt.toLocaleTimeString('ja-JP', {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        dateLabel = `${tx.date} ${timePart}`;
+      }
+    } catch {
+      // fallback to tx.date
+    }
+    return dateLabel;
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navigation />
@@ -268,7 +286,7 @@ export default function ApprovePage() {
                           className="w-4 h-4"
                         />
                       </td>
-                      <td className="px-6 py-3">{tx.date}</td>
+                      <td className="px-6 py-3">{buildDateLabel(tx)}</td>
                       <td className="px-6 py-3">{tx.user_name || tx.user_id}</td>
                       <td className="px-6 py-3">{tx.item_code}</td>
                       <td className="px-6 py-3">{tx.item_name}</td>
