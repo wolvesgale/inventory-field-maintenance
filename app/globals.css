@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
+  --background: #eaecf0;
   --foreground: #171717;
 }
 
@@ -10,6 +10,12 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+/* 背景を少し暗め（ページ全体のベースカラーをグレー寄りに） */
+@theme {
+  --color-gray-50: #e2e5ea;
+  --color-gray-100: #d4d8de;
 }
 
 @media (prefers-color-scheme: dark) {
