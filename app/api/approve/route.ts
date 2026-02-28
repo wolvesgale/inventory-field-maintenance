@@ -50,7 +50,17 @@ export async function POST(request: NextRequest) {
     const trimmedComment = typeof comment === 'string' ? comment.trim() : '';
 
     if (action === 'approve') {
-      await updateTransactionStatus(transactionId, 'approved', { actorName });
+      const { stockLedgerUpdated } = await updateTransactionStatus(
+        transactionId, 'approved', { actorName }
+      );
+      if (!stockLedgerUpdated) {
+        // トランザクションはシート上で承認済み。在庫台帳のみ更新失敗。
+        return NextResponse.json({
+          success: true,
+          warning: 'stockLedgerSyncFailed',
+          message: '承認しました（在庫台帳の更新に失敗しました。管理者に連絡してください）',
+        });
+      }
     } else if (action === 'reject') {
       if (!trimmedComment) {
         return NextResponse.json(
