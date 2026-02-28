@@ -708,7 +708,7 @@ export async function addTransaction(
   const { map: colMap, totalColumns } = buildTransactionColumnMap(header);
   const range = "Transactions!A1";
 
-  const id = `TRX_${Date.now()}`;
+  const id = `TRX_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const row = Array(totalColumns).fill("");
   row[colMap.id] = id;
   row[colMap.itemCode] = transaction.item_code;
@@ -892,7 +892,7 @@ export async function addPhysicalCount(
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "PhysicalCount!A1";
 
-  const id = `PC_${Date.now()}`;
+  const id = `PC_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const values = [
     [
       id,
@@ -928,7 +928,7 @@ export async function addDiffLog(
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "DiffLog!A1";
 
-  const id = `DIFF_${Date.now()}`;
+  const id = `DIFF_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const values = [
     [
       id,
@@ -1209,7 +1209,7 @@ export async function addItem(
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "Items!A1";
 
-  const id = `ITEM_${Date.now()}`;
+  const id = `ITEM_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const values = [
     [
       id,
@@ -1356,7 +1356,7 @@ export async function addSupplierReport(
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "SupplierReports!A1";
 
-  const id = `SR_${Date.now()}`;
+  const id = `SR_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const values = [
     [
       id,
