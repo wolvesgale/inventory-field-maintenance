@@ -14,8 +14,52 @@ import {
   updateTransactionStatus,
   getSupplierReportsByMonth,
   updateStockLedgerForMonthEnd,
+  getStockAggregate,
 } from '@/lib/sheets';
 import { MonthlyReportItem } from '@/types';
+
+/**
+ * GET /api/monthly-report
+ * 現在の在庫数をメーカー報告書フォーマット（入力在庫数,品目コード,品目名称）でCSV出力
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || ((session.user as any)?.role !== 'manager' && (session.user as any)?.role !== 'admin')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const stockList = await getStockAggregate();
+
+    // メーカー報告書と同じ列順: 入力在庫数, 品目コード, 品目名称
+    const csvRows = [
+      ['入力在庫数', '品目コード', '品目名称'],
+      ...stockList.map(item => [
+        String(item.closing_qty),
+        item.item_code,
+        item.item_name,
+      ]),
+    ];
+
+    const csv = csvRows
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\r\n');
+
+    const today = new Date().toISOString().slice(0, 10);
+    return new Response('\uFEFF' + csv, {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="stock_report_${today}.csv"`,
+      },
+    });
+  } catch (error) {
+    console.error('Failed to generate stock CSV:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to generate stock CSV' },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {

@@ -89,6 +89,7 @@ export default function TransactionFormPage({ mode, initialTransaction }: Transa
   const [isStockLoading, setIsStockLoading] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResubmitting, setIsResubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const isEditMode = mode === 'edit';
   const [pendingTransactions, setPendingTransactions] = useState<Transaction[]>([]);
@@ -377,6 +378,36 @@ useEffect(() => {
     }
   };
 
+  const handleResubmit = async () => {
+    if (!initialTransaction?.id) return;
+    if (!window.confirm('この内容で再申請しますか？承認待ちに戻ります。')) return;
+
+    setSubmitError(null);
+    setIsResubmitting(true);
+
+    try {
+      const res = await fetch(`/api/transactions/${initialTransaction.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'status', status: 'pending' }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || data?.success === false) {
+        throw new Error(data?.error || '再申請に失敗しました');
+      }
+
+      window.alert('再申請しました。承認をお待ちください。');
+      router.push('/transactions');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '再申請に失敗しました';
+      setSubmitError(message);
+    } finally {
+      setIsResubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-10">
       <div className="max-w-3xl mx-auto px-4">
@@ -402,6 +433,13 @@ useEffect(() => {
           {submitError && (
             <div className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {submitError}
+            </div>
+          )}
+
+          {isEditMode && loadedTxMeta?.status === 'returned' && (
+            <div className="mb-4 rounded-lg border border-orange-300 bg-orange-50 px-4 py-3 text-sm text-orange-800">
+              <span className="font-semibold">差し戻しされています。</span>
+              内容を修正して「更新」後、「再申請する」ボタンを押してください。
             </div>
           )}
 
@@ -627,13 +665,23 @@ useEffect(() => {
                 <button
                   type="submit"
                   className="flex-1 rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
-                  disabled={isSubmitting || isFormDisabled}
+                  disabled={isSubmitting || isResubmitting || isFormDisabled}
                 >
                   {isSubmitting
                     ? '送信中...'
                     : isEditMode
                     ? 'この内容で更新する'
                     : 'この内容で登録する'}
+                </button>
+              )}
+              {isEditMode && loadedTxMeta?.status === 'returned' && (
+                <button
+                  type="button"
+                  onClick={handleResubmit}
+                  className="rounded-lg bg-orange-500 px-4 py-3 font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-gray-400"
+                  disabled={isSubmitting || isResubmitting || isFormDisabled}
+                >
+                  {isResubmitting ? '送信中...' : '再申請する'}
                 </button>
               )}
               {!isEditMode && (

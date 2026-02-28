@@ -15,6 +15,12 @@ export default function MonthlyReportPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
 
+  // 初期在庫インポート用
+  const [importCsvText, setImportCsvText] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
   // レポート取得
   const handleFetchReport = async () => {
     setError('');
@@ -74,6 +80,45 @@ export default function MonthlyReportPage() {
     }
   };
 
+  // 在庫 CSV ダウンロード（メーカー報告書フォーマット）
+  const handleDownloadCSV = () => {
+    const link = document.createElement('a');
+    link.href = '/api/monthly-report';
+    link.click();
+  };
+
+  // 初期在庫インポート
+  const handleImport = async () => {
+    if (!importCsvText.trim()) {
+      setImportError('CSVデータを貼り付けてください');
+      return;
+    }
+    if (!window.confirm('StockLedger を上書き初期化します。この操作は元に戻せません。実行しますか？')) return;
+
+    setImportError(null);
+    setImportResult(null);
+    setIsImporting(true);
+
+    try {
+      const res = await fetch('/api/import/initial-stock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csvText: importCsvText }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setImportResult(data.message);
+        setImportCsvText('');
+      } else {
+        setImportError(data.error || 'インポートに失敗しました');
+      }
+    } catch {
+      setImportError('ネットワークエラーが発生しました');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   // 新規品目フィルタ
   const newItems = reports.filter(r => r.is_new_item);
   const diffItems = reports.filter(r => r.has_diff);
@@ -97,7 +142,7 @@ export default function MonthlyReportPage() {
               </div>
             )}
 
-            <div className="flex gap-4 items-end">
+            <div className="flex flex-wrap gap-4 items-end">
               <div>
                 <label htmlFor="month" className="block text-sm font-medium text-gray-700 mb-1">
                   対象月
@@ -116,6 +161,13 @@ export default function MonthlyReportPage() {
                 className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded"
               >
                 {isLoading ? '取得中...' : '取得'}
+              </button>
+              <button
+                onClick={handleDownloadCSV}
+                className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
+                title="現在の在庫数をメーカー報告書フォーマット（入力在庫数,品目コード,品目名称）でダウンロード"
+              >
+                在庫 CSV ダウンロード
               </button>
             </div>
           </div>
@@ -203,6 +255,42 @@ export default function MonthlyReportPage() {
               </div>
             </>
           )}
+          {/* 初期在庫インポート（月次運用開始時の一回限りの初期投入） */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-bold mb-2 text-gray-900">初期在庫インポート</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              メーカー報告書 CSV（列順: <code className="bg-gray-100 px-1 rounded">入力在庫数, 品目コード, 品目名称</code>）を貼り付けて
+              StockLedger を初期化します。<br />
+              <span className="text-orange-600 font-medium">月次運用開始時の一回限りの操作です。既存データは上書きされます。</span>
+            </p>
+
+            {importResult && (
+              <div className="mb-4 rounded border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">
+                {importResult}
+              </div>
+            )}
+            {importError && (
+              <div className="mb-4 rounded border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {importError}
+              </div>
+            )}
+
+            <textarea
+              value={importCsvText}
+              onChange={(e) => setImportCsvText(e.target.value)}
+              rows={8}
+              placeholder={'例:\n入力在庫数,品目コード,品目名称\n10,866232000,スクリュー\n15,899678000,Oリング'}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-400 mb-4"
+            />
+
+            <button
+              onClick={handleImport}
+              disabled={isImporting || !importCsvText.trim()}
+              className="bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 text-white font-bold py-2 px-6 rounded"
+            >
+              {isImporting ? 'インポート中...' : 'インポート実行'}
+            </button>
+          </div>
         </div>
       </main>
     </div>

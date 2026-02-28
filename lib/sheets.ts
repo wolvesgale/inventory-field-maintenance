@@ -422,6 +422,86 @@ export async function updateStockLedgerForMonthEnd(): Promise<void> {
   });
 }
 
+/**
+ * 初期在庫インポート: メーカー報告書 CSV から StockLedger を初期化する
+ * 既存行は opening_qty=qty, closing_qty=qty, in_qty=0, out_qty=0 に上書き。
+ * 存在しない品目は新規追加。
+ */
+export async function initializeStockLedger(
+  items: Array<{ item_code: string; item_name: string; qty: number }>
+): Promise<{ updated: number; appended: number }> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "StockLedger!A1:H1000",
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length === 0) {
+    throw new Error("[StockLedger] initializeStockLedger: sheet is empty");
+  }
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+  const idxItemCode   = colIndex("item_code");
+  const idxItemName   = colIndex("item_name");
+  const idxOpeningQty = colIndex("opening_qty");
+  const idxInQty      = colIndex("in_qty");
+  const idxOutQty     = colIndex("out_qty");
+  const idxClosingQty = colIndex("closing_qty");
+
+  if (idxItemCode === -1 || idxClosingQty === -1) {
+    throw new Error("[StockLedger] initializeStockLedger: required columns missing");
+  }
+
+  const dataRows = rows.slice(1);
+  const endCol = columnLetterFromIndex(header.length - 1);
+  let updated = 0;
+  let appended = 0;
+
+  for (const item of items) {
+    const qty = Number(item.qty) || 0;
+    const targetIndex = dataRows.findIndex(
+      (r) => (r[idxItemCode] ?? "").toString() === item.item_code
+    );
+
+    if (targetIndex >= 0) {
+      const nextRow = [...(dataRows[targetIndex] || [])];
+      while (nextRow.length < header.length) nextRow.push("");
+      if (idxItemName   >= 0) nextRow[idxItemName]   = item.item_name || nextRow[idxItemName] || "";
+      if (idxOpeningQty >= 0) nextRow[idxOpeningQty] = String(qty);
+      if (idxInQty      >= 0) nextRow[idxInQty]      = "0";
+      if (idxOutQty     >= 0) nextRow[idxOutQty]     = "0";
+      nextRow[idxClosingQty] = String(qty);
+      const rowNum = targetIndex + 2;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `StockLedger!A${rowNum}:${endCol}${rowNum}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [nextRow] },
+      });
+      updated++;
+    } else {
+      const newRow = Array(header.length).fill("");
+      newRow[idxItemCode] = item.item_code;
+      if (idxItemName   >= 0) newRow[idxItemName]   = item.item_name;
+      if (idxOpeningQty >= 0) newRow[idxOpeningQty] = String(qty);
+      if (idxInQty      >= 0) newRow[idxInQty]      = "0";
+      if (idxOutQty     >= 0) newRow[idxOutQty]     = "0";
+      newRow[idxClosingQty] = String(qty);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: "StockLedger!A1",
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [newRow] },
+      });
+      appended++;
+    }
+  }
+
+  return { updated, appended };
+}
+
 export async function getUserByLoginId(
   login_id: string
 ): Promise<AppUser | null> {
