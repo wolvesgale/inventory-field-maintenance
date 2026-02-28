@@ -365,6 +365,63 @@ async function updateStockLedgerForApprovedTransaction(tx: Transaction) {
   }
 }
 
+/**
+ * 月次締め: StockLedger の各行について
+ *   opening_qty = closing_qty (現在値を翌月の期首へ引き継ぐ)
+ *   in_qty      = 0           (当月分をリセット)
+ *   out_qty     = 0           (当月分をリセット)
+ *   closing_qty = opening_qty (新しい期首残高と一致させる)
+ * 全行を1回の values.update で書き戻す。
+ */
+export async function updateStockLedgerForMonthEnd(): Promise<void> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "StockLedger!A1:H1000",
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 2) {
+    console.warn("[StockLedger] updateStockLedgerForMonthEnd: no data rows found");
+    return;
+  }
+
+  const header = rows[0];
+  const colIndex = (name: string) => header.indexOf(name);
+
+  const idxItemCode   = colIndex("item_code");
+  const idxOpeningQty = colIndex("opening_qty");
+  const idxInQty      = colIndex("in_qty");
+  const idxOutQty     = colIndex("out_qty");
+  const idxClosingQty = colIndex("closing_qty");
+
+  if (idxItemCode === -1 || idxClosingQty === -1) {
+    throw new Error(
+      "[StockLedger] updateStockLedgerForMonthEnd: required columns missing (item_code, closing_qty)"
+    );
+  }
+
+  const updatedRows = rows.slice(1).map((row) => {
+    if (!row[idxItemCode]) return row; // 空行はスキップ
+    const next = [...row];
+    while (next.length < header.length) next.push("");
+    const closing = Number(next[idxClosingQty] ?? 0) || 0;
+    if (idxOpeningQty !== -1) next[idxOpeningQty] = String(closing);
+    if (idxInQty !== -1)      next[idxInQty]      = "0";
+    if (idxOutQty !== -1)     next[idxOutQty]      = "0";
+    next[idxClosingQty] = String(closing);
+    return next;
+  });
+
+  const endCol = columnLetterFromIndex(header.length - 1);
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `StockLedger!A2:${endCol}${updatedRows.length + 1}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: updatedRows },
+  });
+}
+
 export async function getUserByLoginId(
   login_id: string
 ): Promise<AppUser | null> {
@@ -903,7 +960,7 @@ export async function updateTransactionStatus(
   id: string,
   status: TransactionStatus,
   actorOrOptions?: string | { actorName?: string | null; returnComment?: string | null },
-): Promise<void> {
+): Promise<{ stockLedgerUpdated: boolean }> {
   const { sheets, spreadsheetId } = getSheetsClient();
   const range = "Transactions!A1:Z1000";
 
@@ -926,7 +983,7 @@ export async function updateTransactionStatus(
   const { map: colMap, totalColumns } = buildTransactionColumnMap(header);
   const dataRows = rows.slice(1);
   const rowIndex = dataRows.findIndex((r) => r[colMap.id] === id);
-  if (rowIndex === -1) return;
+  if (rowIndex === -1) return { stockLedgerUpdated: true };
 
   const nextRow = [...(dataRows[rowIndex] || [])];
   while (nextRow.length < totalColumns) nextRow.push("");
@@ -974,10 +1031,13 @@ export async function updateTransactionStatus(
   if (isNewlyApproved && existingTx) {
     try {
       await updateStockLedgerForApprovedTransaction(existingTx);
+      return { stockLedgerUpdated: true };
     } catch (error) {
       console.error("[StockLedger] Failed to update closing_qty", error);
+      return { stockLedgerUpdated: false };
     }
   }
+  return { stockLedgerUpdated: true };
 }
 
 /**
@@ -1002,8 +1062,10 @@ export async function getStockAggregate(): Promise<
     getStockLedgerMap(),
   ]);
 
+  // "locked" は月次締め済み = opening_qty に組み込み済み。
+  // 二重計上を防ぐため "approved"（当月分）のみ集計する。
   const approved = transactions.filter(
-    (t) => t.status === "approved" || t.status === "locked"
+    (t) => t.status === "approved"
   );
 
   const aggregate = new Map<
@@ -1252,6 +1314,37 @@ export async function getDiffLogs(): Promise<DiffLog[]> {
   }));
 
   return logs;
+}
+
+/**
+ * 指定月のサプライヤーレポートを取得する（月次締め冪等チェック用）
+ */
+export async function getSupplierReportsByMonth(
+  month: string
+): Promise<SupplierReport[]> {
+  const { sheets, spreadsheetId } = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "SupplierReports!A1:F1000",
+  });
+
+  const rows = res.data.values ?? [];
+  if (rows.length < 2) return [];
+
+  const header = rows[0];
+  const ci = (name: string) => header.indexOf(name);
+
+  return rows
+    .slice(1)
+    .filter((row) => (row[ci("month")] ?? "") === month)
+    .map((row) => ({
+      id:          row[ci("id")]          ?? "",
+      month:       row[ci("month")]       ?? "",
+      item_code:   row[ci("item_code")]   ?? "",
+      item_name:   row[ci("item_name")]   ?? "",
+      qty:         Number(row[ci("qty")] ?? 0) || 0,
+      is_new_item: row[ci("is_new_item")] === "true",
+    }));
 }
 
 /**

@@ -12,6 +12,8 @@ import {
   getPhysicalCounts,
   addSupplierReport,
   updateTransactionStatus,
+  getSupplierReportsByMonth,
+  updateStockLedgerForMonthEnd,
 } from '@/lib/sheets';
 import { MonthlyReportItem } from '@/types';
 
@@ -81,6 +83,15 @@ export async function POST(request: NextRequest) {
 
     // action が 'finalize' の場合、月次締め処理
     if (action === 'finalize') {
+      // 冪等チェック: 同月の二重実行を防ぐ
+      const existingReports = await getSupplierReportsByMonth(month);
+      if (existingReports.length > 0) {
+        return NextResponse.json(
+          { success: false, error: `月次締め処理は既に完了しています (${month})` },
+          { status: 409 }
+        );
+      }
+
       // Transactions の status を locked に更新
       for (const tx of monthTransactions) {
         await updateTransactionStatus(tx.id, 'locked');
@@ -96,6 +107,10 @@ export async function POST(request: NextRequest) {
           is_new_item: report.is_new_item,
         });
       }
+
+      // StockLedger の期首残高を翌月用に更新
+      // opening_qty = closing_qty、in_qty / out_qty = 0 にリセット
+      await updateStockLedgerForMonthEnd();
     }
 
     return NextResponse.json({
